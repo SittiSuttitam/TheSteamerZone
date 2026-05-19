@@ -1,10 +1,18 @@
-import 'dotenv/config';
+import './loadEnv.js';
 import fs from 'node:fs';
+import path from 'node:path';
+import { getInstallDir } from './loadEnv.js';
 import express from 'express';
 import cors from 'cors';
-import { createClient } from '@supabase/supabase-js';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import { WebcastPushConnection } from 'tiktok-live-connector';
 import { createRealtimePublisher } from './realtime.js';
+import {
+  createConnectorSupabase,
+  getLastAuthError,
+  hasServerBuildConfig,
+  usesServiceRole,
+} from './supabaseClient.js';
 import {
   getDataDir,
   loadGiftConfig,
@@ -20,9 +28,41 @@ import {
 import { fetchActionsForRoom } from './actions.js';
 import { createTtsService } from './tts.js';
 import {
+  IMAGE_SLOTS,
+  clearImageSlot,
+  imagesDir,
+  loadImageOverlayConfig,
+  publicImageConfig,
+  uploadImage,
+  type ImageSlot,
+} from './imageOverlay.js';
+import {
   DEFAULT_TTS_SETTINGS,
+  normalizeEngineOrder,
+  type TtsEngineId,
   type TtsSettingsShape,
 } from '@thesteamerzone/shared';
+import {
+  formatRoomCode,
+  loadUserConfig,
+  saveUserConfig,
+  type UserConfigFile,
+} from './userConfig.js';
+import { isDesktopAppOpen } from './desktopApp.js';
+import {
+  defaultViewerConfig,
+  listSoundFiles,
+  loadViewerConfig,
+  saveViewerConfig,
+  soundsDir,
+  type ViewerConfigFile,
+} from './viewerConfig.js';
+import {
+  defaultSoundConfig,
+  loadSoundConfig,
+  saveSoundConfig,
+  type SoundConfigFile,
+} from './soundConfig.js';
 
 const PORT = Number(process.env.CONNECTOR_PORT || 8780);
 const PUBLIC_URL =
@@ -30,7 +70,6 @@ const PUBLIC_URL =
 const ROOM_ID = process.env.DEFAULT_ROOM_ID || '';
 const USER_DATA = getDataDir(process.env.USER_DATA_DIR);
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
-const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || '';
 
 interface LocalState {
   win: number;
@@ -52,23 +91,55 @@ let giftConfig: GiftConfigFile = loadGiftConfig(USER_DATA);
 let giftConnection: WebcastPushConnection | null = null;
 let connectedRoom = '';
 
-const supabaseAdmin =
-  SUPABASE_URL && SUPABASE_SERVICE_ROLE_KEY
-    ? createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-        auth: { autoRefreshToken: false, persistSession: false },
-      })
-    : null;
+let supabaseDb: SupabaseClient | null = null;
+let rt: ReturnType<typeof createRealtimePublisher> | null = null;
 
-const rt = supabaseAdmin
-  ? createRealtimePublisher(supabaseAdmin, async (roomId) => {
-      const { data } = await supabaseAdmin
-        .from('rooms')
-        .select('widget_secret')
-        .eq('id', roomId)
-        .maybeSingle();
-      return data?.widget_secret ?? null;
-    })
-  : null;
+function applySupabaseClient(client: SupabaseClient | null) {
+  supabaseDb = client;
+  if (!client) {
+    rt = null;
+    return;
+  }
+  rt = createRealtimePublisher(client, async (roomId) => {
+    const { data } = await client
+      .from('rooms')
+      .select('widget_secret')
+      .eq('id', roomId)
+      .maybeSingle();
+    return data?.widget_secret ?? null;
+  });
+}
+
+async function refreshSupabase(): Promise<boolean> {
+  const client = await createConnectorSupabase(userConfig, (tokens) => {
+    userConfig = saveUserConfig(USER_DATA, tokens);
+  });
+  if (client) {
+    const { data } = await client.auth.getSession();
+    if (!data.session?.access_token) {
+      applySupabaseClient(null);
+      console.warn('[TheSteamerZone] Supabase session ไม่พร้อม');
+      return false;
+    }
+    if (data.session.access_token !== userConfig.accessToken) {
+      userConfig = saveUserConfig(USER_DATA, {
+        accessToken: data.session.access_token,
+        refreshToken: data.session.refresh_token ?? userConfig.refreshToken,
+      });
+    }
+  }
+  applySupabaseClient(client);
+  if (!client) {
+    const hint = getLastAuthError();
+    console.warn(
+      '[TheSteamerZone] ซิงก์คลาวด์ปิด',
+      hint || '— ล็อกอินเว็บแล้วกด「เชื่อมต่อทั้งหมด」'
+    );
+    return false;
+  }
+  console.log('[TheSteamerZone] Supabase พร้อมซิงก์');
+  return true;
+}
 
 const giftTracker = createGiftComboTracker((comboData) => {
   void comboData;
@@ -84,6 +155,20 @@ function resolveGoogleApiKey(): string {
 
 const tts = createTtsService(USER_DATA, resolveGoogleApiKey);
 ttsSettings = tts.loadSettingsFile(USER_DATA);
+
+let imageOverlayConfig = loadImageOverlayConfig(USER_DATA);
+let userConfig: UserConfigFile = loadUserConfig(USER_DATA);
+let viewerConfig: ViewerConfigFile = loadViewerConfig(USER_DATA);
+let soundConfig: SoundConfigFile = loadSoundConfig(USER_DATA);
+const activeVips = new Map<string, { lastActivity: number; soundPlayed: boolean }>();
+void refreshSupabase();
+setInterval(() => {
+  if (userConfig.accessToken?.trim() || userConfig.refreshToken?.trim()) {
+    void refreshSupabase();
+  }
+}, 45 * 60 * 1000);
+const WEB_PUBLIC_URL =
+  process.env.WEB_PUBLIC_URL || 'http://localhost:5173';
 
 function maskGoogleKey(key: string): string {
   if (key.length <= 8) return '••••••••';
@@ -117,30 +202,13 @@ async function speakAndBroadcast(text: string) {
   if (!trimmed) return;
 
   const room = effectiveRoomId();
-  let audioUrl: string | null = null;
-  let engine = 'web_speech';
-
-  const order = ttsSettings.engine_order?.length
-    ? ttsSettings.engine_order
-    : DEFAULT_TTS_SETTINGS.engine_order;
-
-  for (const eng of order) {
-    if (eng === 'google_cloud' && resolveGoogleApiKey()) {
-      const out = await tts.synthesizeGoogle(trimmed, ttsSettings);
-      if (out) {
-        audioUrl = `${PUBLIC_URL}${out.audioUrl}`;
-        engine = 'google_cloud';
-        break;
-      }
-    }
-  }
-
   const payload = {
     type: 'tts_play',
     text: trimmed,
-    audioUrl,
-    engine,
+    audioUrl: null,
+    engine: 'web_speech' as const,
     voiceId: ttsSettings.voice_id,
+    systemVoiceUri: ttsSettings.system_voice_uri ?? null,
     rate: ttsSettings.rate,
     pitch: ttsSettings.pitch,
     volume: ttsSettings.volume,
@@ -152,6 +220,9 @@ async function speakAndBroadcast(text: string) {
 }
 
 async function pushState() {
+  if (!rt) {
+    await refreshSupabase();
+  }
   const room = effectiveRoomId();
   const payload = {
     type: 'state' as const,
@@ -163,20 +234,97 @@ async function pushState() {
       winMax: state.winMax,
     },
   };
-  if (rt) {
-    await rt.broadcast(room, 'state', payload as unknown as Record<string, unknown>);
-    await rt.upsertLiveState(room, {
-      win: state.win,
-      win_label: state.winLabel,
-      win_goal: state.winGoal,
-      win_min: state.winMin,
-      win_max: state.winMax,
-    });
-  }
+  if (!rt) return;
+  await rt.broadcast(room, 'state', payload as unknown as Record<string, unknown>);
+  await rt.upsertLiveState(room, {
+    win: state.win,
+    win_label: state.winLabel,
+    win_goal: state.winGoal,
+    win_min: state.winMin,
+    win_max: state.winMax,
+  });
 }
 
 function effectiveRoomId(): string {
-  return ROOM_ID || '00000000-0000-0000-0000-000000000001';
+  const fromUser = userConfig.roomId?.trim();
+  if (fromUser) return fromUser;
+  if (ROOM_ID) return ROOM_ID;
+  return '00000000-0000-0000-0000-000000000001';
+}
+
+function buildSetupStatus() {
+  const desktopOpen = isDesktopAppOpen(USER_DATA);
+  const roomId = effectiveRoomId();
+  const hasUserRoom = !!(userConfig.roomId?.trim() || ROOM_ID);
+  const roomOk =
+    hasUserRoom && roomId !== '00000000-0000-0000-0000-000000000001';
+  const roomConfigured = roomOk && !!userConfig.setupCompleted;
+  const webLinked = roomConfigured && desktopOpen;
+  const cloudOk = !!rt;
+  const serverConfigured = hasServerBuildConfig();
+  const adminOk = serverConfigured;
+  const hasUserToken = !!(userConfig.accessToken?.trim());
+  const tiktokOk = !!giftConnection;
+  const steps = [
+    {
+      id: 'program',
+      label: 'โปรแกรม Connector ทำงาน',
+      ok: true,
+      hint: '',
+    },
+    {
+      id: 'weblink',
+      label: 'เว็บ ↔ โปรแกรม เชื่อมแล้ว',
+      ok: webLinked,
+      hint: webLinked
+        ? userConfig.linkedAt
+          ? `ล่าสุด ${new Date(userConfig.linkedAt).toLocaleString('th-TH')}`
+          : ''
+        : !desktopOpen && roomConfigured
+          ? 'เปิดโปรแกรม Connector บนเครื่อง'
+          : 'บนเว็บกด「เชื่อมต่อทั้งหมด」',
+    },
+    {
+      id: 'cloud',
+      label: 'ซิงก์กับ OBS / Widgets',
+      ok: cloudOk && roomOk,
+      hint: cloudOk
+        ? ''
+        : !adminOk
+          ? 'build โปรแกรมใหม่พร้อม SUPABASE_URL + ANON key'
+          : usesServiceRole()
+            ? 'ซิงก์คลาวด์ยังไม่ทำงาน — ตรวจ service_role'
+            : !hasUserToken
+              ? 'ล็อกอินเว็บแล้วกด「เชื่อมต่อทั้งหมด」'
+              : getLastAuthError() ||
+                'ซิงก์ไม่สำเร็จ — ล็อกอินใหม่แล้วกด「เชื่อมต่อทั้งหมด」อีกครั้ง',
+    },
+    {
+      id: 'tiktok',
+      label: 'TikTok Live (ตอนไลฟ์)',
+      ok: tiktokOk,
+      hint: tiktokOk
+        ? `@${connectedRoom}`
+        : 'ตั้งบนเว็บ — ใส่ชื่อผู้ใช้ตอนเริ่มไลฟ์',
+    },
+  ];
+  const ready = webLinked && cloudOk && roomOk && tiktokOk;
+  return {
+    ready,
+    steps,
+    desktopAppOpen: desktopOpen,
+    webLinked,
+    roomConfigured,
+    tiktokConnected: tiktokOk,
+    roomId: roomOk ? roomId : null,
+    roomCode: roomOk ? formatRoomCode(roomId) : null,
+    dashboardUrl: userConfig.dashboardUrl || WEB_PUBLIC_URL.replace(/\/$/, ''),
+    linkedAt: userConfig.linkedAt || null,
+    cloudSync: cloudOk,
+    cloudSyncError: cloudOk ? null : getLastAuthError(),
+    needsAdminSetup: !serverConfigured,
+    cloudAuth: usesServiceRole() ? 'service_role' : hasUserToken ? 'user' : 'none',
+  };
 }
 
 function clampWin(n: number) {
@@ -186,51 +334,222 @@ function clampWin(n: number) {
   return v;
 }
 
+async function broadcastSound(payload: {
+  name?: string;
+  file?: string;
+  volume?: number;
+}) {
+  if (!rt) {
+    await refreshSupabase();
+  }
+  if (!rt) return;
+  const vol = viewerConfig.volume ?? 0.7;
+  try {
+    await rt.broadcast(effectiveRoomId(), 'sound_play', {
+      type: 'sound_play',
+      name: payload.name || 'custom',
+      file: payload.file,
+      volume: payload.volume ?? vol,
+    });
+  } catch (e) {
+    console.warn('[sound]', e instanceof Error ? e.message : e);
+  }
+}
+
 function applyWinDelta(delta: number) {
   const prev = state.win;
   state.win = clampWin(state.win + delta);
   void pushState();
   if (delta > 0 && state.win > prev) {
-    void rt?.broadcast(effectiveRoomId(), 'sound_play', {
-      type: 'sound_play',
-      name: 'increment',
-    });
+    void broadcastSound({ name: 'increment', file: soundConfig.incrementFile });
   } else if (delta < 0 && state.win < prev) {
-    void rt?.broadcast(effectiveRoomId(), 'sound_play', {
-      type: 'sound_play',
-      name: 'decrement',
+    void broadcastSound({ name: 'decrement', file: soundConfig.decrementFile });
+  }
+}
+
+function checkAndNotifyVip(data: Record<string, unknown>, eventType: string) {
+  if (!viewerConfig.enabled || !rt) return;
+  const username = String(data.uniqueId ?? data.userId ?? '')
+    .replace(/^@/, '')
+    .toLowerCase();
+  if (!username) return;
+  const tracked = viewerConfig.trackedUsers.find(
+    (u) => u.username.toLowerCase() === username
+  );
+  if (!tracked?.soundFile) return;
+
+  let info = activeVips.get(username);
+  const now = Date.now();
+  const displayName = String(
+    data.nickname ?? data.displayName ?? tracked.displayName ?? username
+  );
+
+  if (!info) {
+    info = { lastActivity: now, soundPlayed: true };
+    activeVips.set(username, info);
+    void rt.broadcast(effectiveRoomId(), 'vip_alert', {
+      type: 'vip_alert',
+      username,
+      displayName,
+      soundFile: tracked.soundFile,
+      volume: viewerConfig.volume,
+      eventType,
     });
+    void broadcastSound({ name: 'vip', file: tracked.soundFile });
+  } else {
+    info.lastActivity = now;
   }
 }
 
 const app = express();
 app.use(cors({ origin: true }));
-app.use(express.json({ limit: '2mb' }));
+app.use(express.json({ limit: '4mb' }));
+app.use('/images', express.static(imagesDir(USER_DATA)));
+app.use('/sounds', express.static(soundsDir(USER_DATA)));
 
 app.get('/api/actions', async (req, res) => {
-  if (!supabaseAdmin) {
+  if (!supabaseDb) {
     res.json([]);
     return;
   }
   const room = String(req.query.roomId || ROOM_ID || effectiveRoomId());
   try {
-    const rows = await fetchActionsForRoom(supabaseAdmin, room);
+    const rows = await fetchActionsForRoom(supabaseDb, room);
     res.json(rows);
   } catch (e) {
     res.status(500).json({ error: String(e) });
   }
 });
 
+app.post('/api/shutdown', (_req, res) => {
+  res.json({ ok: true });
+  setTimeout(() => process.exit(0), 150);
+});
+
 app.get('/health', (_req, res) => {
+  const setup = buildSetupStatus();
+  const desktopOpen = setup.desktopAppOpen;
   res.json({
     ok: true,
+    desktopAppOpen: desktopOpen,
     service: 'TheSteamerZone-connector',
     tiktok: !!giftConnection,
-    room: connectedRoom,
+    tiktokRoom: connectedRoom,
+    defaultRoomId: effectiveRoomId(),
+    defaultRoomConfigured: !!(userConfig.roomId?.trim() || ROOM_ID),
     supabase: !!rt,
+    cloudReady: !!rt,
+    cloudSyncError: getLastAuthError(),
     ttsGoogle: !!resolveGoogleApiKey(),
     dataDir: USER_DATA,
+    setup,
   });
+});
+
+app.get('/api/setup', (_req, res) => {
+  res.json({
+    ...userConfig,
+    ...buildSetupStatus(),
+  });
+});
+
+app.put('/api/setup', async (req, res) => {
+  const body = req.body || {};
+  const nextRoom =
+    body.roomId != null ? String(body.roomId).trim() : userConfig.roomId;
+  userConfig = saveUserConfig(USER_DATA, {
+    roomId: nextRoom,
+    dashboardUrl:
+      body.dashboardUrl != null ? String(body.dashboardUrl) : userConfig.dashboardUrl,
+    setupCompleted: body.setupCompleted ?? true,
+    linkedAt: nextRoom ? new Date().toISOString() : userConfig.linkedAt,
+    accessToken:
+      body.accessToken != null ? String(body.accessToken) : userConfig.accessToken,
+    refreshToken:
+      body.refreshToken != null ? String(body.refreshToken) : userConfig.refreshToken,
+  });
+  const synced = await refreshSupabase();
+  res.json({
+    ok: true,
+    cloudSynced: synced,
+    ...buildSetupStatus(),
+  });
+});
+
+/** เชื่อมต่อครั้งเดียว: รับห้องจากเว็บ + TikTok (ถ้ามี) */
+app.post('/api/setup/quick', async (req, res) => {
+  const body = req.body || {};
+  const roomId = String(body.roomId || '').trim();
+  if (!roomId) {
+    res.status(400).json({ error: 'ต้องมีรหัสห้องจากบัญชีเว็บ' });
+    return;
+  }
+  userConfig = saveUserConfig(USER_DATA, {
+    roomId,
+    dashboardUrl:
+      body.dashboardUrl != null
+        ? String(body.dashboardUrl)
+        : userConfig.dashboardUrl,
+    setupCompleted: true,
+    linkedAt: new Date().toISOString(),
+    accessToken:
+      body.accessToken != null ? String(body.accessToken) : userConfig.accessToken,
+    refreshToken:
+      body.refreshToken != null ? String(body.refreshToken) : userConfig.refreshToken,
+  });
+  const cloudSynced = await refreshSupabase();
+  const username = String(body.tiktokUsername || body.username || '')
+    .replace(/^@/, '')
+    .trim();
+  let tiktokError: string | null = null;
+  if (username) {
+    try {
+      if (giftConnection) {
+        await giftConnection.disconnect();
+        giftConnection = null;
+      }
+      giftConnection = new WebcastPushConnection(username, {
+        enableExtendedGiftInfo: true,
+        enableWebsocketUpgrade: true,
+        requestPollingIntervalMs: 1000,
+      });
+      giftConnection.on('gift', (data: Record<string, unknown>) =>
+        handleGiftPayload(data)
+      );
+      giftConnection.on('chat', (data: Record<string, unknown>) => {
+        const comment = String(
+          data.comment ?? data.text ?? data.content ?? ''
+        );
+        const nickname = String(
+          data.nickname ?? data.displayName ?? data.uniqueId ?? ''
+        );
+        void rt?.broadcast(effectiveRoomId(), 'chat', {
+          type: 'chat',
+          comment,
+          user: String(data.uniqueId ?? data.userId ?? ''),
+          nickname,
+        });
+        if (ttsSettings.read_chat && comment.trim()) {
+          void speakAndBroadcast(
+            templateFill(ttsSettings.chat_template, { nickname, comment })
+          );
+        }
+        checkAndNotifyVip(data, 'chat');
+      });
+      giftConnection.on('error', (err: Error) =>
+        console.warn('[TikTok]', err.message)
+      );
+      await giftConnection.connect();
+      connectedRoom = username;
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e);
+      tiktokError = /not.?live|offline|LIVE has ended/i.test(msg)
+        ? 'TikTok: ห้องยังไม่ไลฟ์ — ข้ามไปก่อนได้ แล้วเชื่อมใหม่ตอนไลฟ์'
+        : `TikTok: ${msg}`;
+    }
+  }
+  const setup = buildSetupStatus();
+  res.json({ ok: true, tiktokError, cloudSynced, ...setup });
 });
 
 app.get('/api/state', (_req, res) => {
@@ -269,6 +588,59 @@ app.post('/api/win/reset', (_req, res) => {
   state.win = clampWin(0);
   void pushState();
   res.json(state);
+});
+
+app.get('/api/image-overlay/config', (req, res) => {
+  imageOverlayConfig = loadImageOverlayConfig(USER_DATA);
+  const webBase = String(req.query.webBase || WEB_PUBLIC_URL);
+  res.json({
+    config: imageOverlayConfig,
+    slots: publicImageConfig(imageOverlayConfig, PUBLIC_URL, webBase),
+  });
+});
+
+app.post('/api/image-overlay/upload', (req, res) => {
+  const type = String(req.body?.type || '') as ImageSlot;
+  if (!IMAGE_SLOTS.includes(type)) {
+    res.status(400).json({ error: 'type must be positive|negative|heart|hammer' });
+    return;
+  }
+  const dataUrl = String(req.body?.dataUrl || '');
+  const filename = String(req.body?.filename || 'upload.png');
+  const match = /^data:image\/[\w+.-]+;base64,(.+)$/.exec(dataUrl);
+  if (!match) {
+    res.status(400).json({ error: 'dataUrl required (base64 image)' });
+    return;
+  }
+  try {
+    const buffer = Buffer.from(match[1], 'base64');
+    if (buffer.length > 8 * 1024 * 1024) {
+      res.status(400).json({ error: 'file too large (max 8MB)' });
+      return;
+    }
+    imageOverlayConfig = uploadImage(USER_DATA, imageOverlayConfig, type, filename, buffer);
+    const webBase = String(req.query.webBase || req.body?.webBase || WEB_PUBLIC_URL);
+    res.json({
+      ok: true,
+      slots: publicImageConfig(imageOverlayConfig, PUBLIC_URL, webBase),
+    });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+app.post('/api/image-overlay/reset', (req, res) => {
+  const type = String(req.body?.type || '') as ImageSlot;
+  if (!IMAGE_SLOTS.includes(type)) {
+    res.status(400).json({ error: 'invalid type' });
+    return;
+  }
+  imageOverlayConfig = clearImageSlot(USER_DATA, imageOverlayConfig, type);
+  const webBase = String(req.query.webBase || req.body?.webBase || WEB_PUBLIC_URL);
+  res.json({
+    ok: true,
+    slots: publicImageConfig(imageOverlayConfig, PUBLIC_URL, webBase),
+  });
 });
 
 app.get('/api/config/gift', (_req, res) => {
@@ -313,6 +685,7 @@ function handleGiftPayload(ev: Record<string, unknown>) {
       giftName: giftNameRaw,
       repeatCount: finalRepeat,
     });
+    checkAndNotifyVip(ev, 'gift');
 
     if (ttsSettings.read_gifts) {
       const nickname = String(
@@ -331,8 +704,156 @@ function handleGiftPayload(ev: Record<string, unknown>) {
 }
 
 app.post('/api/mock/gift', (req, res) => {
-  const ev = { ...req.body, mock: true };
+  const ev = { ...req.body, mock: true, repeatEnd: true, repeatCount: req.body?.repeatCount ?? 1 };
   handleGiftPayload(ev);
+  res.json({ ok: true, win: state.win });
+});
+
+app.post('/api/mock/chat', (req, res) => {
+  const comment = String(req.body?.comment ?? req.body?.text ?? 'ทดสอบแชท');
+  const nickname = String(req.body?.nickname ?? 'ผู้ทดสอบ');
+  const uniqueId = String(req.body?.uniqueId ?? req.body?.username ?? 'test_user');
+  void rt?.broadcast(effectiveRoomId(), 'chat', {
+    type: 'chat',
+    comment,
+    nickname,
+    user: uniqueId,
+  });
+  checkAndNotifyVip(
+    { uniqueId, nickname, comment },
+    'chat'
+  );
+  res.json({ ok: true });
+});
+
+app.get('/api/config/viewer', (_req, res) => {
+  viewerConfig = loadViewerConfig(USER_DATA);
+  res.json({
+    ...viewerConfig,
+    sounds: listSoundFiles(USER_DATA),
+  });
+});
+
+app.put('/api/config/viewer', (req, res) => {
+  const body = req.body || {};
+  viewerConfig = saveViewerConfig(USER_DATA, {
+    enabled: body.enabled ?? viewerConfig.enabled,
+    volume:
+      typeof body.volume === 'number' ? body.volume : viewerConfig.volume,
+    trackedUsers: Array.isArray(body.trackedUsers)
+      ? body.trackedUsers
+      : viewerConfig.trackedUsers,
+    soundFiles: Array.isArray(body.soundFiles)
+      ? body.soundFiles
+      : viewerConfig.soundFiles,
+  });
+  res.json({ ok: true, ...viewerConfig, sounds: listSoundFiles(USER_DATA) });
+});
+
+app.get('/api/config/sounds', (_req, res) => {
+  soundConfig = loadSoundConfig(USER_DATA);
+  viewerConfig = loadViewerConfig(USER_DATA);
+  res.json({
+    files: listSoundFiles(USER_DATA),
+    incrementFile: soundConfig.incrementFile,
+    decrementFile: soundConfig.decrementFile,
+    volume: viewerConfig.volume,
+  });
+});
+
+app.put('/api/config/sounds', (req, res) => {
+  const body = req.body || {};
+  if (body.incrementFile != null) {
+    soundConfig = saveSoundConfig(USER_DATA, {
+      ...soundConfig,
+      incrementFile: String(body.incrementFile),
+    });
+  }
+  if (body.decrementFile != null) {
+    soundConfig = saveSoundConfig(USER_DATA, {
+      ...soundConfig,
+      decrementFile: String(body.decrementFile),
+    });
+  }
+  if (typeof body.volume === 'number') {
+    viewerConfig = saveViewerConfig(USER_DATA, {
+      ...viewerConfig,
+      volume: body.volume,
+    });
+  }
+  res.json({
+    ok: true,
+    files: listSoundFiles(USER_DATA),
+    ...soundConfig,
+    volume: viewerConfig.volume,
+  });
+});
+
+app.get('/api/sounds', (_req, res) => {
+  res.json({
+    files: listSoundFiles(USER_DATA),
+    ...loadSoundConfig(USER_DATA),
+  });
+});
+
+app.post('/api/sounds/upload', (req, res) => {
+  const filename = String(req.body?.filename || 'sound.mp3').replace(/[^\w.\-]/g, '_');
+  const dataUrl = String(req.body?.dataUrl || '');
+  const match = /^data:(audio\/[\w+.-]+|application\/octet-stream);base64,(.+)$/.exec(
+    dataUrl
+  );
+  if (!match) {
+    res.status(400).json({ error: 'dataUrl required (base64 audio)' });
+    return;
+  }
+  try {
+    const buffer = Buffer.from(match[2], 'base64');
+    if (buffer.length > 5 * 1024 * 1024) {
+      res.status(400).json({ error: 'max 5MB' });
+      return;
+    }
+    const sd = soundsDir(USER_DATA);
+    fs.mkdirSync(sd, { recursive: true });
+    fs.writeFileSync(path.join(sd, filename), buffer);
+    const files = listSoundFiles(USER_DATA);
+    if (!viewerConfig.soundFiles.includes(filename)) {
+      viewerConfig.soundFiles = [...viewerConfig.soundFiles, filename];
+      saveViewerConfig(USER_DATA, viewerConfig);
+    }
+    res.json({ ok: true, filename, files });
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
+});
+
+app.post('/api/test/sound', async (req, res) => {
+  const name = String(req.body?.name || 'test');
+  const file = String(req.body?.file || '').trim() || undefined;
+  const volume =
+    typeof req.body?.volume === 'number' ? req.body.volume : viewerConfig.volume;
+  await broadcastSound({ name, file, volume });
+  res.json({
+    ok: true,
+    supabase: !!rt,
+    hint: rt
+      ? undefined
+      : 'ซิงก์คลาวด์ปิด — ล็อกอินเว็บแล้วกดเชื่อมต่อทั้งหมด',
+  });
+});
+
+app.post('/api/test/vip', async (req, res) => {
+  const username = String(req.body?.username || 'vip_test')
+    .replace(/^@/, '')
+    .toLowerCase();
+  const displayName = String(req.body?.displayName || username);
+  const soundFile = String(
+    req.body?.soundFile || viewerConfig.trackedUsers[0]?.soundFile || 'increment.mp3'
+  );
+  activeVips.delete(username);
+  checkAndNotifyVip(
+    { uniqueId: username, nickname: displayName, userId: username },
+    'mock'
+  );
   res.json({ ok: true });
 });
 
@@ -376,6 +897,7 @@ app.post('/api/tiktok/connect', async (req, res) => {
           templateFill(ttsSettings.chat_template, { nickname, comment })
         );
       }
+      checkAndNotifyVip(data, 'chat');
     });
     giftConnection.on('error', (err: Error) =>
       console.warn('[TikTok]', err.message)
@@ -385,7 +907,13 @@ app.post('/api/tiktok/connect', async (req, res) => {
     res.json({ ok: true, username: roomId });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    res.status(500).json({ error: msg });
+    let friendly = msg;
+    if (/not.?live|offline|LIVE has ended|room.?id/i.test(msg)) {
+      friendly = 'ห้องยังไม่ไลฟ์ หรือชื่อผู้ใช้ไม่ถูกต้อง — ลองตอนเริ่มไลฟ์จริง';
+    } else if (/ECONNREFUSED|timeout|ETIMEDOUT/i.test(msg)) {
+      friendly = 'เชื่อม TikTok ไม่ได้ — ตรวจอินเทอร์เน็ต';
+    }
+    res.status(500).json({ error: friendly });
   }
 });
 
@@ -439,26 +967,12 @@ app.post('/api/tts/synthesize', async (req, res) => {
   const settings = { ...ttsSettings, ...req.body?.settings };
   if (req.body?.voiceId) settings.voice_id = String(req.body.voiceId);
 
-  if (resolveGoogleApiKey()) {
-    const out = await tts.synthesizeGoogle(text, settings);
-    if (out) {
-      res.json({
-        ok: true,
-        engine: 'google_cloud',
-        audioUrl: `${PUBLIC_URL}${out.audioUrl}`,
-        text,
-      });
-      return;
-    }
-  }
   res.json({
     ok: true,
     engine: 'web_speech',
     audioUrl: null,
     text,
-    message: resolveGoogleApiKey()
-      ? 'Google synthesis failed — use Web Speech in browser'
-      : 'Add Google API key in Voice settings or connector .env',
+    message: 'ใช้เสียงพื้นฐานของเบราว์เซอร์ (ฟรี)',
   });
 });
 
@@ -547,9 +1061,23 @@ app.post('/api/tiktok/disconnect', async (_req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`[TheSteamerZone] connector http://127.0.0.1:${PORT}`);
   console.log(`[TheSteamerZone] data: ${USER_DATA}`);
-  if (!ROOM_ID) console.warn('[TheSteamerZone] Set DEFAULT_ROOM_ID to your Supabase rooms.id UUID');
-  if (!rt) console.warn('[TheSteamerZone] Supabase env missing — Realtime + DB sync disabled');
+  if (!userConfig.roomId?.trim() && !ROOM_ID) {
+    console.warn(
+      '[TheSteamerZone] ยังไม่มีรหัสห้อง — ล็อกอินเว็บแล้วกด「ส่งไปโปรแกรม」'
+    );
+  }
+  if (!rt) console.warn('[TheSteamerZone] ซิงก์คลาวด์ปิดอยู่ (ผู้ดูแลตั้งค่าเซิร์ฟเวอร์ครั้งเดียว)');
+});
+
+server.on('error', (err: NodeJS.ErrnoException) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(
+      '[TheSteamerZone] พอร์ต 8780 ถูกใช้อยู่แล้ว — ปิดโปรแกรม Connector ตัวอื่น (Task Manager)'
+    );
+    process.exit(1);
+  }
+  throw err;
 });

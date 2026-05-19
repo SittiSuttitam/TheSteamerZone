@@ -9,7 +9,7 @@ export function createRealtimePublisher(
   const channels = new Map<string, RealtimeChannel>();
   const channelReady = new Map<string, Promise<void>>();
 
-  function channelFor(roomId: string): RealtimeChannel {
+  function ensureChannel(roomId: string): RealtimeChannel {
     const name = `room:${roomId}`;
     let ch = channels.get(roomId);
     if (!ch) {
@@ -17,11 +17,25 @@ export function createRealtimePublisher(
         config: { broadcast: { ack: false } },
       });
       channels.set(roomId, ch);
-      const ready = new Promise<void>((resolve, reject) => {
+      const ready = new Promise<void>((resolve) => {
+        const done = () => resolve();
+        const timer = setTimeout(() => {
+          console.warn(`[realtime] subscribe timeout room:${roomId}`);
+          done();
+        }, 8000);
         ch!.subscribe((status, err) => {
-          if (status === 'SUBSCRIBED') resolve();
-          if (status === 'CHANNEL_ERROR')
-            reject(err ?? new Error('channel error'));
+          if (status === 'SUBSCRIBED') {
+            clearTimeout(timer);
+            done();
+          }
+          if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT') {
+            clearTimeout(timer);
+            console.warn(
+              `[realtime] ${status} room:${roomId}`,
+              err instanceof Error ? err.message : err
+            );
+            done();
+          }
         });
       });
       channelReady.set(roomId, ready);
@@ -37,19 +51,19 @@ export function createRealtimePublisher(
       event: string,
       payload: Record<string, unknown>
     ) {
-      channelFor(roomId);
-      await channelReady.get(roomId);
-      const token = (await getWidgetToken(roomId)) || '';
-      const body = { ...payload, token };
-      const ch = channelFor(roomId);
       try {
+        ensureChannel(roomId);
+        await channelReady.get(roomId);
+        const token = (await getWidgetToken(roomId)) || '';
+        const body = { ...payload, token };
+        const ch = ensureChannel(roomId);
         await ch.send({
           type: 'broadcast',
           event,
           payload: body,
         });
       } catch (e) {
-        console.error('[broadcast]', event, e);
+        console.warn('[broadcast]', event, e instanceof Error ? e.message : e);
       }
     },
 
@@ -64,20 +78,24 @@ export function createRealtimePublisher(
         meta?: Record<string, unknown>;
       }
     ) {
-      const { error } = await supabase.from('live_state').upsert(
-        {
-          room_id: roomId,
-          win: row.win,
-          win_label: row.win_label ?? 'WIN',
-          win_goal: row.win_goal ?? null,
-          win_min: row.win_min ?? null,
-          win_max: row.win_max ?? null,
-          meta: row.meta ?? {},
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: 'room_id' }
-      );
-      if (error) console.error('[live_state]', error);
+      try {
+        const { error } = await supabase.from('live_state').upsert(
+          {
+            room_id: roomId,
+            win: row.win,
+            win_label: row.win_label ?? 'WIN',
+            win_goal: row.win_goal ?? null,
+            win_min: row.win_min ?? null,
+            win_max: row.win_max ?? null,
+            meta: row.meta ?? {},
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: 'room_id' }
+        );
+        if (error) console.warn('[live_state]', error.message);
+      } catch (e) {
+        console.warn('[live_state]', e instanceof Error ? e.message : e);
+      }
     },
   };
 }

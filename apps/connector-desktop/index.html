@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+    <title>TheSteamerZone Connector</title>
+    <link rel="icon" type="image/png" href="assets/icon.png" />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="header">
+      <img class="app-logo" src="assets/icon.png" width="64" height="64" alt="" />
+      <h1>TheSteamerZone</h1>
+      <p class="subtitle">โปรแกรมสำหรับไลฟ์สตรีม</p>
+    </header>
+
+    <section id="linkBanner" class="card link-banner">
+      <div class="link-row">
+        <span id="pillWeb" class="pill pill-off">เว็บ</span>
+        <span class="link-arrow" aria-hidden="true">⟷</span>
+        <span id="pillProgram" class="pill pill-on">โปรแกรม</span>
+      </div>
+      <p id="linkMessage" class="link-message">กำลังตรวจสอบ…</p>
+      <p id="roomCode" class="room-code"></p>
+    </section>
+
+    <section class="card status-card">
+      <div class="status-row">
+        <span id="statusDot" class="dot dot-off"></span>
+        <span id="statusText">กำลังตรวจสอบ…</span>
+      </div>
+      <ul id="checklist" class="checklist"></ul>
+    </section>
+
+    <section class="card">
+      <h2 class="card-title">ทำบนเว็บ</h2>
+      <p class="hint">
+        ล็อกอินและกด「เชื่อมต่อทั้งหมด」บนเว็บ — โปรแกรมนี้รอรับการเชื่อมอัตโนมัติ
+      </p>
+      <p class="hint" style="margin-top: 8px">
+        <strong>TikTok Live</strong> ตั้งบนเว็บตอนเริ่มไลฟ์ (รับของขวัญ/แชท) — ไม่ต้องใส่ในโปรแกรมนี้
+      </p>
+      <button type="button" id="btnWebSetup" class="btn primary" style="margin-top: 12px; width: 100%">
+        เปิดหน้าเว็บ — เชื่อมต่อทั้งหมด
+      </button>
+    </section>
+
+    <section class="card actions">
+      <button type="button" id="btnWidgets" class="btn">หน้า Widgets (OBS)</button>
+    </section>
+
+    <section class="card">
+      <button type="button" id="btnData" class="btn subtle">เปิดโฟลเดอร์ข้อมูลของฉัน</button>
+    </section>
+
+    <section class="card log-card">
+      <h2>บันทึก</h2>
+      <pre id="logBox" class="log"></pre>
+    </section>
+
+    <footer class="footer">ปิดหน้าต่าง = ออกจากโปรแกรม</footer>
+    <script src="renderer.js"></script>
+  </body>
+</html>

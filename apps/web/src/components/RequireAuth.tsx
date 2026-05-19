@@ -3,7 +3,7 @@ import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export function RequireAuth({ children }: { children: ReactNode }) {
-  const { user, loading, supabaseConfigured } = useAuth();
+  const { user, loading, authError, supabaseConfigured } = useAuth();
   const location = useLocation();
 
   if (!supabaseConfigured) {
@@ -15,7 +15,7 @@ export function RequireAuth({ children }: { children: ReactNode }) {
             สร้างไฟล์ <code className="rounded bg-white/80 px-1">apps/web/.env</code> จาก{' '}
             <code className="rounded bg-white/80 px-1">.env.example</code> แล้วใส่ค่า{' '}
             <code className="rounded bg-white/80 px-1">VITE_SUPABASE_URL</code> และ{' '}
-            <code className="rounded bg-white/80 px-1">VITE_SUPABASE_ANON_KEY</code>{' '}
+            <code className="rounded bg-white/80 px-1">VITE_SUPABASE_PUBLISHABLE_KEY</code>{' '}
             จากโปรเจกต์ Supabase ของคุณ จากนั้นรีสตาร์ทเซิร์ฟเวอร์ท้องถิ่น
           </p>
           <a
@@ -36,6 +36,24 @@ export function RequireAuth({ children }: { children: ReactNode }) {
       <div className="flex min-h-full flex-col items-center justify-center gap-3 bg-tsz-bg">
         <div className="h-8 w-8 animate-spin rounded-full border-2 border-tsz-border border-t-tsz-accent" />
         <p className="text-sm text-tsz-muted">กำลังโหลด…</p>
+      </div>
+    );
+  }
+
+  if (authError && !user) {
+    return (
+      <div className="flex min-h-full flex-col items-center justify-center gap-4 p-8 text-center">
+        <div className="max-w-md rounded-2xl border border-red-200 bg-red-50 p-6 text-sm text-red-900">
+          <p className="font-medium">เชื่อม Supabase ไม่สำเร็จ</p>
+          <p className="mt-2 text-red-800">{authError}</p>
+          <p className="mt-3 text-xs">
+            ลองใช้คีย์ <code className="rounded bg-white px-1">anon</code> (ขึ้นต้น eyJ…) ใน apps/web/.env
+            แล้วรีสตาร์ทเว็บ
+          </p>
+        </div>
+        <a href="/login" className="text-sm text-tsz-accent underline">
+          ไปหน้าเข้าสู่ระบบ
+        </a>
       </div>
     );
   }

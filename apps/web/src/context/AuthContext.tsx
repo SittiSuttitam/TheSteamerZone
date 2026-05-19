@@ -9,12 +9,13 @@ import {
 } from 'react';
 import type { Session, User } from '@supabase/supabase-js';
 import { getSupabase } from '../lib/supabase';
+import { oauthRedirectPath } from '../lib/appUrl';
 
 type AuthState = {
   user: User | null;
   session: Session | null;
   loading: boolean;
-  /** false = ไม่มีค่า env Supabase */
+  authError: string | null;
   supabaseConfigured: boolean;
   signInWithGoogle: () => Promise<void>;
   signOut: () => Promise<void>;
@@ -22,9 +23,12 @@ type AuthState = {
 
 const AuthContext = createContext<AuthState | null>(null);
 
+const SESSION_TIMEOUT_MS = 10_000;
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [authError, setAuthError] = useState<string | null>(null);
   const s = getSupabase();
   const supabaseConfigured = !!s;
 
@@ -33,22 +37,45 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setLoading(false);
       return;
     }
-    void s.auth.getSession().then(({ data }) => {
-      setSession(data.session ?? null);
-      setLoading(false);
-    });
+
+    let done = false;
+    const finish = () => {
+      if (!done) {
+        done = true;
+        setLoading(false);
+      }
+    };
+
+    const timeout = window.setTimeout(finish, SESSION_TIMEOUT_MS);
+
+    void s.auth
+      .getSession()
+      .then(({ data, error }) => {
+        if (error) setAuthError(error.message);
+        setSession(data.session ?? null);
+        finish();
+      })
+      .catch((e: unknown) => {
+        setAuthError(e instanceof Error ? e.message : String(e));
+        finish();
+      });
+
     const { data: sub } = s.auth.onAuthStateChange((_event, next) => {
       setSession(next);
+      finish();
     });
-    return () => sub.subscription.unsubscribe();
+
+    return () => {
+      window.clearTimeout(timeout);
+      sub.subscription.unsubscribe();
+    };
   }, [s]);
 
   const signInWithGoogle = useCallback(async () => {
     if (!s) return;
-    const redirect = `${window.location.origin}/app/connection`;
     await s.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: redirect },
+      options: { redirectTo: oauthRedirectPath() },
     });
   }, [s]);
 
@@ -62,22 +89,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       user: session?.user ?? null,
       session,
       loading,
+      authError,
       supabaseConfigured,
       signInWithGoogle,
       signOut,
     }),
-    [
-      session,
-      loading,
-      supabaseConfigured,
-      signInWithGoogle,
-      signOut,
-    ]
+    [session, loading, authError, supabaseConfigured, signInWithGoogle, signOut]
   );
 
-  return (
-    <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
-  );
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
 
 export function useAuth(): AuthState {

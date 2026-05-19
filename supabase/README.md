@@ -8,10 +8,17 @@ npx supabase link --project-ref YOUR_REF
 npx supabase db push
 ```
 
-Or paste `supabase/migrations/20250219120000_init.sql` in SQL Editor.
+Or paste both files in SQL Editor (in order):
+
+- `supabase/migrations/20250219120000_init.sql`
+- `supabase/migrations/20250519120000_bootstrap_user_room.sql` (auto room on signup)
 
 3. **Auth → Providers:** enable Google (Client ID / Secret from Google Cloud Console).
-4. **Authentication → URL config:** add your Vercel URL and `http://localhost:5173`.
+4. **Authentication → URL config** (สำคัญ — ถ้าผิดจะ redirect ไป localhost):
+   - **Site URL:** `https://thesteamerzone.vercel.app`
+   - **Redirect URLs:**  
+     `https://thesteamerzone.vercel.app/**`  
+     `http://localhost:5173/**`
 5. **Realtime:** ensure `live_state` is in publication (migration adds it).
 
 ## Env (apps/web `.env`)
@@ -28,10 +35,10 @@ VITE_CONNECTOR_URL=http://127.0.0.1:8780
 SUPABASE_URL=
 SUPABASE_SERVICE_ROLE_KEY=
 CONNECTOR_PORT=8780
-ROOM_ID=optional-default-room-uuid-after-created
+DEFAULT_ROOM_ID=<rooms.id uuid from Studio page or Table Editor>
 ```
 
-Create a room row in Table Editor or via dashboard after login; use that `id` as `roomId` in widget URLs.
+After Google login, open **สตูดิโอ OBS** → **โหลดห้องจากบัญชี** (or signup trigger creates one automatically).
 
 ## Realtime
 

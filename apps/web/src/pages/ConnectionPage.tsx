@@ -1,197 +1,221 @@
 import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { LinkStatusBar } from '../components/LinkStatusBar';
+import { SetupChecklist } from '../components/SetupChecklist';
+import { useAuth } from '../context/AuthContext';
+import { useRoomCredentials } from '../hooks/useRoomCredentials';
 import { connectorUrl, api } from '../lib/connector';
+import { getFreshSessionTokens } from '../lib/sessionTokens';
 
-const LS_CONNECTOR = 'thesteamerzone_connector_url';
+type QuickResult = {
+  webLinked?: boolean;
+  tiktokError?: string | null;
+  ready?: boolean;
+  cloudSynced?: boolean;
+  cloudSyncError?: string | null;
+};
 
 export function ConnectionPage() {
-  const [health, setHealth] = useState<unknown>(null);
-  const [connectorInput, setConnectorInput] = useState(
-    () =>
-      (typeof window !== 'undefined' && localStorage.getItem(LS_CONNECTOR)) ||
-      import.meta.env.VITE_CONNECTOR_URL ||
-      'http://127.0.0.1:8780'
-  );
-  const [savedHint, setSavedHint] = useState(false);
+  const { session } = useAuth();
+  const room = useRoomCredentials();
   const [tiktok, setTiktok] = useState('');
-  const [err, setErr] = useState<string | null>(null);
-  const [ping, setPing] = useState(0);
-  const [winState, setWinState] = useState<{ win: number; winLabel?: string } | null>(
-    null
-  );
-
-  async function winAction(path: 'increment' | 'decrement' | 'reset') {
-    setErr(null);
-    try {
-      const s = await api<{ win: number; winLabel?: string }>(
-        `${connectorUrl()}/api/win/${path}`,
-        { method: 'POST' }
-      );
-      setWinState(s);
-      setPing((n) => n + 1);
-    } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
-    }
-  }
+  const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState<string | null>(null);
+  const [msg, setMsg] = useState<string | null>(null);
+  const [ok, setOk] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
+  const [showTech, setShowTech] = useState(false);
 
   useEffect(() => {
-    setErr(null);
-    api(`${connectorUrl()}/health`)
-      .then(setHealth)
-      .catch((e: Error) => setErr(e.message));
-    api<{ win: number; winLabel?: string }>(`${connectorUrl()}/api/state`)
-      .then(setWinState)
-      .catch(() => setWinState(null));
-  }, [ping]);
-
-  function persistConnectorUrl() {
-    const v = connectorInput.trim().replace(/\/$/, '');
-    if (v && v !== 'http://127.0.0.1:8780') {
-      localStorage.setItem(LS_CONNECTOR, v);
-    } else if (!connectorInput.trim()) {
-      localStorage.removeItem(LS_CONNECTOR);
-    } else {
-      localStorage.setItem(LS_CONNECTOR, v);
+    if (room.user && room.supabaseConfigured && !room.roomId && !room.roomBusy) {
+      void room.loadRoomFromAccount();
     }
-    setSavedHint(true);
-    setTimeout(() => setSavedHint(false), 2000);
-    setPing((n) => n + 1);
-  }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [room.user?.id, room.supabaseConfigured]);
 
-  async function connectTiktok() {
-    setErr(null);
+  async function connectAll() {
+    setMsg(null);
+    setOk(false);
+    setBusy(true);
     try {
-      await api(`${connectorUrl()}/api/tiktok/connect`, {
+      if (!room.user) {
+        setMsg('ล็อกอิน Google ก่อน (ลิงก์ด้านล่าง)');
+        return;
+      }
+      setStep('โหลดห้องจากบัญชี…');
+      let rid = room.roomId.trim();
+      if (!rid) {
+        rid = (await room.loadRoomFromAccount()) || '';
+      }
+      if (!rid) {
+        setMsg(room.roomMsg || 'โหลดห้องไม่สำเร็จ — ลองอีกครั้ง');
+        return;
+      }
+      setStep('เชื่อมเว็บกับโปรแกรม…');
+      const health = await api<{ desktopAppOpen?: boolean }>(
+        `${connectorUrl()}/health`
+      ).catch(() => null);
+      if (!health?.desktopAppOpen) {
+        setMsg('เปิดโปรแกรม TheSteamerZone Connector บนเครื่องก่อน');
+        return;
+      }
+
+      setStep('ยืนยันการล็อกอิน…');
+      const tokens = await getFreshSessionTokens(session);
+      if (!tokens.accessToken) {
+        setMsg('เซสชันหมดอายุ — ออกจากระบบแล้วล็อกอิน Google ใหม่');
+        return;
+      }
+
+      const result = await api<QuickResult>(`${connectorUrl()}/api/setup/quick`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username: tiktok }),
+        body: JSON.stringify({
+          roomId: rid,
+          dashboardUrl: window.location.origin,
+          tiktokUsername: tiktok.trim() || undefined,
+          accessToken: tokens.accessToken,
+          refreshToken: tokens.refreshToken,
+        }),
       });
-      const h = await api(`${connectorUrl()}/health`);
-      setHealth(h);
+      setRefreshKey((n) => n + 1);
+      if (result.webLinked) {
+        setOk(true);
+        if (result.cloudSynced === false) {
+          setMsg(
+            result.cloudSyncError ||
+              'เว็บเชื่อมแล้ว แต่ซิงก์ OBS ยังไม่ได้ — ล็อกอินใหม่แล้วกดเชื่อมอีกครั้ง'
+          );
+        } else {
+          setMsg(
+            result.ready
+              ? 'เชื่อมครบแล้ว — พร้อมไลฟ์'
+              : result.tiktokError
+                ? `เว็บ ↔ โปรแกรมเชื่อมแล้ว · ${result.tiktokError}`
+                : 'เว็บ ↔ โปรแกรมเชื่อมแล้ว ✓'
+          );
+        }
+      } else {
+        setMsg('เปิดโปรแกรม Connector บนเครื่อง แล้วกดปุ่มนี้อีกครั้ง');
+      }
     } catch (e) {
-      setErr(e instanceof Error ? e.message : String(e));
+      setMsg(e instanceof Error ? e.message : 'เปิดโปรแกรม Connector ก่อน');
+    } finally {
+      setStep(null);
+      setBusy(false);
     }
   }
 
   return (
-    <div className="mx-auto max-w-xl space-y-8">
+    <div className="mx-auto max-w-xl space-y-6">
       <div>
-        <h1 className="mb-2 text-2xl font-semibold tracking-tight">เชื่อมต่อ</h1>
+        <h1 className="mb-2 text-2xl font-semibold tracking-tight">เริ่มใช้งาน</h1>
         <p className="text-sm leading-relaxed text-tsz-muted">
-          เริ่มจากตรงนี้: ตั้งค่าโปรแกรม Connector บนเครื่องคุณ แล้วเชื่อม TikTok Live
+          เปิดโปรแกรมบนเครื่อง → ล็อกอินเว็บ → กดปุ่มเดียวด้านล่าง
         </p>
       </div>
 
-      <section className="rounded-xl border border-tsz-border bg-tsz-surface p-6 shadow-card">
-        <h2 className="mb-1 text-sm font-medium text-tsz-text">ที่อยู่ Local Connector</h2>
-        <p className="mb-3 text-xs text-tsz-muted">
-          ค่าที่ใช้งานจริง:{' '}
-          <code className="rounded bg-tsz-bg px-1">{connectorUrl()}</code> — บันทึกแล้วจะเก็บในเบราว์เซอร์
+      <LinkStatusBar
+        refreshKey={refreshKey}
+        onStatus={({ programOn, webLinked }) => {
+          if (!programOn || !webLinked) {
+            setOk(false);
+            if (!programOn && msg?.includes('เชื่อม')) {
+              setMsg('โปรแกรมปิดแล้ว — เปิดโปรแกรมแล้วกดเชื่อมต่ออีกครั้ง');
+            }
+          }
+        }}
+      />
+
+      <section className="rounded-xl border-2 border-tsz-accent/50 bg-gradient-to-b from-tsz-accent/5 to-tsz-surface p-5 shadow-card">
+        <h2 className="mb-2 text-base font-semibold">เชื่อมต่อทั้งหมด</h2>
+        <p className="mb-4 text-xs leading-relaxed text-tsz-muted">
+          ปุ่มเดียวจัดการ: โหลดห้อง + เชื่อมเว็บกับโปรแกรม
+          {tiktok.trim() ? ' + TikTok Live' : ''}
         </p>
-        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
-          <input
-            className="min-w-0 flex-1 rounded-lg border border-tsz-border px-3 py-2 text-sm"
-            placeholder="http://127.0.0.1:8780"
-            value={connectorInput}
-            onChange={(e) => setConnectorInput(e.target.value)}
-          />
-          <button
-            type="button"
-            className="rounded-lg bg-tsz-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-            onClick={() => persistConnectorUrl()}
-          >
-            บันทึกและทดสอบ
-          </button>
-        </div>
-        {savedHint && (
-          <p className="mt-2 text-xs text-green-700">บันทึกแล้ว — กำลังตรวจสอบสถานะ…</p>
+
+        {room.user ? (
+          <p className="mb-3 text-sm text-tsz-muted">
+            บัญชี: <strong>{room.user.email}</strong>
+            {room.roomId && (
+              <span className="block text-xs">ห้องโหลดแล้ว</span>
+            )}
+          </p>
+        ) : (
+          <p className="mb-3 text-sm text-amber-800">
+            <Link to="/login" className="text-tsz-accent underline">
+              ล็อกอิน Google
+            </Link>{' '}
+            ก่อน (ครั้งเดียว)
+          </p>
         )}
-      </section>
 
-      <section className="rounded-xl border border-tsz-border bg-tsz-surface p-6 shadow-card">
-        <h2 className="mb-1 text-sm font-medium text-tsz-text">คะแนน WIN</h2>
-        <p className="mb-3 text-xs text-tsz-muted">
-          ปรับคะแนนผ่าน Connector — overlay จะ sync เมื่อตั้ง Supabase Realtime
-        </p>
-        <p className="mb-3 text-3xl font-semibold tabular-nums text-tsz-text">
-          {winState?.win ?? '—'}
-          {winState?.winLabel ? (
-            <span className="ml-2 text-sm font-normal text-tsz-muted">
-              {winState.winLabel}
-            </span>
-          ) : null}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <button
-            type="button"
-            className="rounded-lg bg-tsz-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-            onClick={() => void winAction('increment')}
-          >
-            +1
-          </button>
-          <button
-            type="button"
-            className="rounded-lg border border-tsz-border px-4 py-2 text-sm hover:bg-tsz-bg"
-            onClick={() => void winAction('decrement')}
-          >
-            −1
-          </button>
-          <button
-            type="button"
-            className="rounded-lg border border-tsz-border px-4 py-2 text-sm hover:bg-tsz-bg"
-            onClick={() => void winAction('reset')}
-          >
-            รีเซ็ต
-          </button>
-        </div>
-      </section>
-
-      <section className="rounded-xl border border-tsz-border bg-tsz-surface p-6 shadow-card">
-        <h2 className="mb-3 text-sm font-medium text-tsz-muted">สถานะ Connector</h2>
-        {err && <p className="mb-2 text-sm text-red-600">ไม่สามารถเชื่อมต่อได้: {err}</p>}
-        <pre className="max-h-40 overflow-auto text-xs text-tsz-muted">
-          {JSON.stringify(health, null, 2)}
-        </pre>
-      </section>
-
-      <section className="rounded-xl border border-tsz-border bg-tsz-surface p-6 shadow-card">
-        <h2 className="mb-1 text-sm font-medium text-tsz-text">TikTok Live</h2>
-        <p className="mb-3 text-xs text-tsz-muted">
-          ใส่ชื่อผู้ใช้ห้องสตรีม (ไม่ต้องใส่ @) แล้วกดเชื่อม — ต้องรัน Connector บนเครื่องเดียวกัน
-        </p>
-        <div className="flex flex-wrap gap-2">
+        <details className="mb-4 rounded-lg border border-tsz-border bg-tsz-bg/50 p-3">
+          <summary className="cursor-pointer text-sm font-medium">
+            TikTok Live (ทำตอนเริ่มไลฟ์ — ไม่บังคับตอนนี้)
+          </summary>
+          <p className="mt-2 text-xs text-tsz-muted">
+            โปรแกรมต้องรู้ชื่อห้องไลฟ์เพื่อรับของขวัญ/แชทไป Widget — ใส่ตอนไลฟ์จริงก็ได้
+          </p>
           <input
-            className="min-w-[200px] flex-1 rounded-lg border border-tsz-border px-3 py-2 text-sm"
-            placeholder="ชื่อผู้ใช้ TikTok"
+            className="mt-2 w-full rounded-lg border border-tsz-border px-3 py-2 text-sm"
+            placeholder="ชื่อผู้ใช้ TikTok (ไม่ใส่ @)"
             value={tiktok}
             onChange={(e) => setTiktok(e.target.value)}
           />
-          <button
-            type="button"
-            className="rounded-lg bg-tsz-accent px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-            onClick={() => void connectTiktok()}
-          >
-            เชื่อมต่อ TikTok
-          </button>
-        </div>
-      </section>
+        </details>
 
-      <section className="rounded-xl border border-tsz-border bg-tsz-surface p-6 shadow-card">
-        <h2 className="mb-1 text-sm font-medium text-tsz-text">ทดสอบวงล้อ</h2>
-        <p className="mb-3 text-xs text-tsz-muted">
-          เปิดวิดเจ็ตวงล้อใน OBS ก่อน จากนั้นกดทดสอบ — ต้องเปิดวงล้อใน gift-config (enabled) และตั้ง trigger gift
-        </p>
         <button
           type="button"
-          className="rounded-lg border border-tsz-border px-4 py-2 text-sm hover:bg-tsz-bg"
-          onClick={() =>
-            void api(`${connectorUrl()}/api/wheel/mock-spin`, { method: 'POST' }).catch(
-              (e: Error) => setErr(e.message)
-            )
-          }
+          disabled={busy || !room.user}
+          className="w-full rounded-xl bg-tsz-accent px-4 py-4 text-base font-semibold text-white shadow-md disabled:opacity-50"
+          onClick={() => void connectAll()}
         >
-          หมุนวงล้อทดสอบ
+          {busy ? step || 'กำลังเชื่อมต่อ…' : 'เชื่อมต่อทั้งหมด'}
         </button>
+
+        {msg && (
+          <p
+            className={`mt-3 text-center text-sm ${ok ? 'text-green-700' : 'text-amber-900'}`}
+            role="status"
+          >
+            {msg}
+          </p>
+        )}
+        {room.roomMsg && !msg && (
+          <p className="mt-2 text-center text-xs text-tsz-muted">{room.roomMsg}</p>
+        )}
       </section>
+
+      <SetupChecklist refreshKey={refreshKey} />
+
+      <section className="rounded-xl border border-tsz-border bg-tsz-surface p-5 shadow-card">
+        <h2 className="mb-2 text-base font-semibold">ขั้นถัดไป — OBS</h2>
+        <p className="mb-3 text-xs text-tsz-muted">
+          คัดลอกลิงก์ Widget ไปใส่ Browser Source
+        </p>
+        <Link
+          to="/app/widgets"
+          className="inline-block rounded-lg border border-tsz-border px-4 py-2 text-sm font-medium hover:bg-tsz-bg"
+        >
+          ไปหน้า Widgets →
+        </Link>
+      </section>
+
+      <button
+        type="button"
+        className="text-xs text-tsz-accent underline"
+        onClick={() => setShowTech((s) => !s)}
+      >
+        {showTech ? 'ซ่อน' : 'แสดง'}ข้อมูลสำหรับผู้ดูแลระบบ
+      </button>
+      {showTech && (
+        <section className="rounded-lg border border-dashed border-tsz-border bg-tsz-bg/50 p-4 text-xs text-tsz-muted">
+          <p>
+            Connector: <code>{connectorUrl()}</code>
+          </p>
+        </section>
+      )}
     </div>
   );
 }

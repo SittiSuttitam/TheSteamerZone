@@ -14,3 +14,36 @@ body,
 #root {
   height: 100%;
 }
+
+body {
+  color: #f5f5f7;
+}
+
+/* พื้นหลังแบรนด์ — ไอน้ำ / โทนมืดอุ่น */
+.tsz-app-bg {
+  background:
+    radial-gradient(ellipse 120% 80% at 50% -20%, rgba(255, 140, 60, 0.35), transparent 55%),
+    radial-gradient(ellipse 80% 60% at 100% 50%, rgba(0, 113, 227, 0.2), transparent 50%),
+    radial-gradient(ellipse 70% 50% at 0% 80%, rgba(180, 60, 255, 0.15), transparent 45%),
+    linear-gradient(165deg, #0c0c12 0%, #14141f 40%, #1a1520 100%);
+}
+
+.tsz-app-bg-glow {
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+  opacity: 0.6;
+}
+
+.tsz-glass {
+  background: rgba(255, 255, 255, 0.92);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  color: #1d1d1f;
+}
+
+.tsz-glass-sidebar {
+  background: rgba(20, 20, 28, 0.75);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border-color: rgba(255, 255, 255, 0.1);
+}

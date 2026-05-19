@@ -11,3 +11,11 @@ build/
 coverage/
 *.local
 apps/connector/dist/
+release/
+.cache/
+
+.vercel
+.agents/
+.cursor/
+skills-lock.json
+apps/connector-desktop/resources/connector/node/

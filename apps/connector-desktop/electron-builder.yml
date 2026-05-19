@@ -1,0 +1,33 @@
+appId: app.thesteamerzone.connector
+productName: TheSteamerZone Connector
+copyright: Copyright © TheSteamerZone
+
+directories:
+  output: ../../release/desktop
+  buildResources: build
+
+files:
+  - main.cjs
+  - preload.cjs
+  - index.html
+  - renderer.js
+  - styles.css
+  - assets/**/*
+
+extraResources:
+  - from: resources/connector
+    to: connector
+    filter:
+      - "**/*"
+
+win:
+  target:
+    - portable
+  icon: build/icon.ico
+  artifactName: TheSteamerZone-Connector-${version}.${ext}
+  signAndEditExecutable: false
+
+portable:
+  artifactName: TheSteamerZone-Connector-${version}-portable.${ext}
+
+asar: true

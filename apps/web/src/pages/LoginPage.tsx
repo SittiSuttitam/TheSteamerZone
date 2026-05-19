@@ -1,32 +1,41 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { AppShell } from '../components/AppShell';
+import { getConfiguredAppUrl } from '../lib/appUrl';
 
 export function LoginPage() {
   const { user, loading, supabaseConfigured, signInWithGoogle } = useAuth();
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from || '/app/connection';
+  const prodUrl = getConfiguredAppUrl();
+  const onLocalhost =
+    typeof window !== 'undefined' && window.location.hostname === 'localhost';
 
   if (!supabaseConfigured) {
     return (
-      <div className="flex min-h-full flex-col items-center justify-center bg-tsz-bg p-8">
-        <div className="w-full max-w-md rounded-2xl border border-tsz-border bg-tsz-surface p-10 shadow-card">
-          <h1 className="mb-2 text-center text-xl font-semibold tracking-tight">
-            ตั้งค่าก่อนใช้งาน
-          </h1>
-          <p className="text-center text-sm leading-relaxed text-tsz-muted">
-            กรุณาใส่ค่า Supabase ในไฟล์ <code className="rounded bg-tsz-bg px-1">.env</code> ของแอปเว็บ
-            แล้วรีสตาร์ท Vite
-          </p>
+      <AppShell hero>
+        <div className="flex flex-1 items-center justify-center px-6 pb-12">
+          <div className="tsz-glass w-full max-w-md rounded-2xl p-10 shadow-card">
+            <h1 className="mb-2 text-center text-xl font-semibold tracking-tight text-tsz-text">
+              ตั้งค่าก่อนใช้งาน
+            </h1>
+            <p className="text-center text-sm leading-relaxed text-tsz-muted">
+              กรุณาใส่ค่า Supabase ในไฟล์ <code className="rounded bg-tsz-bg px-1">.env</code>{' '}
+              แล้วรีสตาร์ท Vite
+            </p>
+          </div>
         </div>
-      </div>
+      </AppShell>
     );
   }
 
   if (loading) {
     return (
-      <div className="flex min-h-full items-center justify-center bg-tsz-bg">
-        <div className="h-8 w-8 animate-spin rounded-full border-2 border-tsz-border border-t-tsz-accent" />
-      </div>
+      <AppShell>
+        <div className="flex flex-1 items-center justify-center">
+          <div className="h-8 w-8 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+        </div>
+      </AppShell>
     );
   }
 
@@ -35,48 +44,57 @@ export function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-full flex-col items-center justify-center bg-tsz-bg px-6 py-12">
-      <div className="w-full max-w-[400px] rounded-2xl border border-tsz-border bg-tsz-surface p-10 shadow-card">
-        <div className="mb-8 text-center">
-          <p className="mb-1 text-sm font-medium text-tsz-muted">ยินดีต้อนรับสู่</p>
-          <h1 className="text-2xl font-semibold tracking-tight text-tsz-text">
-            TheSteamerZone
-          </h1>
-          <p className="mt-3 text-sm leading-relaxed text-tsz-muted">
+    <AppShell hero>
+      <div className="flex flex-1 flex-col items-center justify-center px-6 pb-10">
+        {onLocalhost && prodUrl && (
+          <div className="mb-4 w-full max-w-[400px] rounded-xl border border-amber-400/40 bg-amber-500/15 px-4 py-3 text-center text-sm text-amber-100">
+            แนะนำใช้เว็บจริง{' '}
+            <a href={prodUrl} className="font-medium underline">
+              {prodUrl.replace(/^https?:\/\//, '')}
+            </a>
+            <br />
+            <span className="text-xs text-amber-100/80">
+              ถ้าหลังล็อกอินไป localhost — ตั้ง Supabase Site URL เป็นลิงก์ด้านบน
+            </span>
+          </div>
+        )}
+
+        <div className="tsz-glass w-full max-w-[400px] rounded-2xl p-10 shadow-card">
+          <p className="mb-6 text-center text-sm leading-relaxed text-tsz-muted">
             เข้าสู่ระบบเพื่อจัดการห้องสตรีม บันทึกการตั้งค่า และลิงก์ OBS อย่างปลอดภัย
           </p>
+
+          <button
+            type="button"
+            className="flex w-full items-center justify-center gap-3 rounded-xl border border-tsz-border bg-white px-4 py-3.5 text-sm font-medium text-tsz-text shadow-sm transition hover:bg-tsz-bg"
+            onClick={() => void signInWithGoogle()}
+          >
+            <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden>
+              <path
+                fill="currentColor"
+                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+              />
+              <path
+                fill="currentColor"
+                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+              />
+              <path
+                fill="currentColor"
+                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+              />
+              <path
+                fill="currentColor"
+                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+              />
+            </svg>
+            เข้าด้วย Google
+          </button>
+
+          <p className="mt-8 text-center text-xs leading-relaxed text-tsz-muted">
+            การเข้าสู่ระบบหมายถึงคุณยอมรับการใช้งานตามนโยบายของผู้ให้บริการ OAuth
+          </p>
         </div>
-
-        <button
-          type="button"
-          className="flex w-full items-center justify-center gap-3 rounded-xl border border-tsz-border bg-white px-4 py-3.5 text-sm font-medium text-tsz-text shadow-sm transition hover:bg-tsz-bg"
-          onClick={() => void signInWithGoogle()}
-        >
-          <svg className="h-5 w-5" viewBox="0 0 24 24" aria-hidden>
-            <path
-              fill="currentColor"
-              d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-            />
-            <path
-              fill="currentColor"
-              d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-            />
-            <path
-              fill="currentColor"
-              d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-            />
-            <path
-              fill="currentColor"
-              d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-            />
-          </svg>
-          เข้าด้วย Google
-        </button>
-
-        <p className="mt-8 text-center text-xs leading-relaxed text-tsz-muted">
-          การเข้าสู่ระบบหมายถึงคุณยอมรับการใช้งานตามนโยบายของผู้ให้บริการ OAuth
-        </p>
       </div>
-    </div>
+    </AppShell>
   );
 }

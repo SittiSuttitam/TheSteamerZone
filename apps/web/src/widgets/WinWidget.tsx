@@ -1,7 +1,7 @@
 import { useSearchParams, useParams } from 'react-router-dom';
 import { useRoomBroadcast } from '../hooks/useRoomBroadcast';
 import { useRoomChannel } from '../hooks/useRoomChannel';
-import { legacySamplePath } from '../lib/legacySamples';
+import { playWidgetSound } from '../lib/playWidgetSound';
 
 export function WinWidget() {
   const { roomId } = useParams<{ roomId: string }>();
@@ -11,18 +11,7 @@ export function WinWidget() {
   const { state } = useRoomBroadcast(roomId, token);
 
   useRoomChannel(roomId, token, {
-    sound_play: (p) => {
-      const name = String(p.name ?? '');
-      const file =
-        name === 'decrement' ? 'decrement.mp3' : 'increment.mp3';
-      try {
-        const a = new Audio(legacySamplePath(file));
-        a.volume = 0.55;
-        void a.play();
-      } catch {
-        /* ignore */
-      }
-    },
+    sound_play: (p) => playWidgetSound(p),
   });
 
   const win = state?.win ?? 0;

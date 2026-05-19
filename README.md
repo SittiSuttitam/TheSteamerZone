@@ -9,16 +9,19 @@ Tier 1 Hybrid stack: **React + Vite** (Vercel) + **Supabase** (Auth, Postgres, R
 ## Quick start
 
 ```bash
-npm install
+npm run setup          # install + copy .env templates
+# แก้ apps/web/.env และ apps/connector/.env (ดู SETUP_TH.md)
+npm run setup:check
 npm run build:shared
-npm run dev:connector   # terminal 1 — needs .env (see apps/connector/.env.example)
+npm run dev:connector   # terminal 1
 npm run dev:web         # terminal 2 — http://localhost:5173
 ```
 
-1. Create a Supabase project, run `supabase/migrations/20250219120000_init.sql` (or `supabase db push`).
-2. Create a row in `rooms` and note `id` + `widget_secret`.
-3. Set `apps/connector/.env`: `SUPABASE_*`, `DEFAULT_ROOM_ID=<rooms.id uuid>`.
-4. Set `apps/web/.env` from `.env.example`.
+**คู่มือภาษาไทย:** [SETUP_TH.md](./SETUP_TH.md)
+
+1. Supabase: รัน migrations ทั้งสองไฟล์ใน `supabase/migrations/`
+2. เปิด Google Auth + redirect `http://localhost:5173`
+3. ล็อกอิน → **สตูดิโอ** → โหลดห้อง → ใส่ `DEFAULT_ROOM_ID` ใน connector `.env`
 
 ## URLs
 
