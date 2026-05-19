@@ -126,14 +126,15 @@ async function main() {
     fs.writeFileSync(path.join(RES, '.env'), envText);
     const envTextCheck = envText;
     const hasUrl = /SUPABASE_URL=\s*\S+/.test(envTextCheck);
-    const hasKey =
-      /SUPABASE_SERVICE_ROLE_KEY=\s*\S+/.test(envTextCheck) ||
-      /SUPABASE_ANON_KEY=\s*\S+/.test(envTextCheck) ||
-      /SUPABASE_PUBLISHABLE_KEY=\s*\S+/.test(envTextCheck);
-    if (hasUrl && hasKey) {
-      log('ฝัง Supabase จาก apps/connector/.env');
+    const hasServerKey =
+      /SUPABASE_SECRET_KEY=\s*sb_secret_\S+/.test(envTextCheck) ||
+      /SUPABASE_SERVICE_ROLE_KEY=\s*eyJ\S+/.test(envTextCheck);
+    if (hasUrl && hasServerKey) {
+      log('ฝัง Supabase (Secret key) จาก apps/connector/.env');
     } else {
-      log('คำเตือน: .env ยังไม่ครบ SUPABASE_URL + ANON หรือ SERVICE_ROLE');
+      log(
+        'คำเตือน: ใส่ SUPABASE_SECRET_KEY (sb_secret_…) ใน apps/connector/.env ก่อน build — ไม่งั้นเชื่อมห้องไม่ได้'
+      );
     }
   } else {
     log('คำเตือน: ไม่มี apps/connector/.env');

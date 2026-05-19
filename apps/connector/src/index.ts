@@ -11,6 +11,7 @@ import {
   createConnectorSupabase,
   getLastAuthError,
   hasServerBuildConfig,
+  missingServerKeyMessage,
   usesServiceRole,
 } from './supabaseClient.js';
 import { getDataDir, type GiftConfigFile } from './config.js';
@@ -608,12 +609,14 @@ app.post('/api/setup/pair', async (req, res) => {
     res.status(400).json({ error: 'ใส่รหัสห้องและรหัสเชื่อมจากเว็บ' });
     return;
   }
+  if (!hasServerBuildConfig()) {
+    res.status(503).json({ error: missingServerKeyMessage() });
+    return;
+  }
   const db = await ensureSupabaseDb();
   if (!db) {
     res.status(503).json({
-      error:
-        getLastAuthError() ||
-        'โปรแกรมยังไม่มี Supabase — build ใหม่พร้อม SUPABASE_URL + SERVICE_ROLE',
+      error: getLastAuthError() || missingServerKeyMessage(),
     });
     return;
   }
@@ -640,6 +643,10 @@ app.post('/api/setup/pair', async (req, res) => {
     res.json({ ok: true, cloudSynced, ...setup, roomId: room.id });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
+    if (/invalid api key/i.test(msg)) {
+      res.status(503).json({ error: missingServerKeyMessage() });
+      return;
+    }
     res.status(500).json({ error: msg });
   }
 });
