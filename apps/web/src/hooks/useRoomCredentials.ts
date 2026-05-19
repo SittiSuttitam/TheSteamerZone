@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { getSupabase } from '../lib/supabase';
 import { ensureDefaultRoom, fetchMyRooms } from '../lib/rooms';
@@ -48,7 +48,7 @@ export function useRoomCredentials() {
 
   const ready = !!roomId.trim();
 
-  async function loadRoomFromAccount(): Promise<string | null> {
+  const loadRoomFromAccount = useCallback(async (): Promise<string | null> => {
     const sb = getSupabase();
     if (!sb || !user) {
       setRoomMsg('ล็อกอิน Google ก่อน');
@@ -77,7 +77,7 @@ export function useRoomCredentials() {
     } finally {
       setRoomBusy(false);
     }
-  }
+  }, [user?.id]);
 
   return {
     user,

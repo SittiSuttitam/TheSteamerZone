@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { GiftRulesEditor, type GiftConfig } from '../components/GiftRulesEditor';
 import { useAuth } from '../context/AuthContext';
 import { useRoomCredentials } from '../hooks/useRoomCredentials';
@@ -13,8 +13,10 @@ export function RulesPage() {
   const [loading, setLoading] = useState(true);
   const [err, setErr] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
+  const loadSeq = useRef(0);
 
   const load = useCallback(async () => {
+    const seq = ++loadSeq.current;
     const sb = getSupabase();
     if (!sb || !user) {
       setErr('ล็อกอิน Google แล้วกดโหลดห้องจากบัญชี');
@@ -22,20 +24,22 @@ export function RulesPage() {
       setLoading(false);
       return;
     }
-    let roomId = room.roomId.trim();
-    if (!roomId) {
-      roomId = (await room.loadRoomFromAccount()) ?? '';
-    }
-    if (!roomId) {
-      setErr('ยังไม่มีห้อง — ไปหน้าเริ่มใช้งานหรือกดโหลดห้องด้านล่าง');
-      setLoading(false);
-      return;
-    }
     setLoading(true);
+    setErr(null);
     try {
+      let roomId = room.roomId.trim();
+      if (!roomId) {
+        roomId = (await room.loadRoomFromAccount()) ?? '';
+      }
+      if (seq !== loadSeq.current) return;
+      if (!roomId) {
+        setErr('ยังไม่มีห้อง — ไปหน้าเริ่มใช้งานหรือกดโหลดห้องด้านล่าง');
+        setConfig(null);
+        return;
+      }
       const data = await fetchRoomGiftConfig(sb, roomId);
+      if (seq !== loadSeq.current) return;
       setConfig(data);
-      setErr(null);
       if (canReachLocalConnector()) {
         try {
           await api(`${connectorUrl()}/api/config/gift`, {
@@ -48,16 +52,18 @@ export function RulesPage() {
         }
       }
     } catch (e) {
+      if (seq !== loadSeq.current) return;
       setErr(e instanceof Error ? e.message : String(e));
       setConfig(null);
     } finally {
-      setLoading(false);
+      if (seq === loadSeq.current) setLoading(false);
     }
   }, [user?.id, room.roomId, room.loadRoomFromAccount]);
 
   useEffect(() => {
+    if (!user) return;
     void load();
-  }, [load]);
+  }, [user?.id, room.roomId, load]);
 
   if (!supabaseConfigured) {
     return (
