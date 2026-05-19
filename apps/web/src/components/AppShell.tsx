@@ -18,7 +18,7 @@ export function AppShell({ children, hero = false }: Props) {
         </header>
       ) : null}
 
-      <div className="relative flex flex-1 flex-col">{children}</div>
+      <div className="relative flex min-h-0 flex-1 flex-col">{children}</div>
 
       <footer className="relative z-10 px-6 py-4 text-center">
         <p className="text-xs text-white/50">

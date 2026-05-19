@@ -1,17 +1,15 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { connectorUrl, api } from '../lib/connector';
-import { legacySamplePath } from '../lib/legacySamples';
-
-type ImageSlot = 'positive' | 'negative' | 'heart' | 'hammer';
-
-type SlotInfo = {
-  type: ImageSlot;
-  filename: string | null;
-  url: string;
-  isCustom: boolean;
-  legacyFile: string;
-};
+import { useAuth } from '../context/AuthContext';
+import { getSupabase } from '../lib/supabase';
+import {
+  IMAGE_SLOTS,
+  type ImageSlot,
+  type OverlaySlotView,
+  deleteUserOverlayImage,
+  fetchUserOverlaySlots,
+  uploadUserOverlayImage,
+} from '../lib/imageOverlayCloud';
 
 const SLOT_META: Record<
   ImageSlot,
@@ -43,37 +41,38 @@ const SLOT_META: Record<
   },
 };
 
-function webBase() {
-  return typeof window !== 'undefined' ? window.location.origin : '';
-}
-
 export function ImagesConfigPage() {
-  const [slots, setSlots] = useState<Record<ImageSlot, SlotInfo> | null>(null);
+  const { user, supabaseConfigured } = useAuth();
+  const [slots, setSlots] = useState<Record<ImageSlot, OverlaySlotView> | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [busy, setBusy] = useState<ImageSlot | null>(null);
   const [status, setStatus] = useState<string | null>(null);
 
-  const load = useCallback(() => {
-    const q = `?webBase=${encodeURIComponent(webBase())}`;
-    api<{ slots: Record<ImageSlot, SlotInfo> }>(
-      `${connectorUrl()}/api/image-overlay/config${q}`
-    )
-      .then((d) => {
-        setSlots(d.slots);
-        setErr(null);
-      })
-      .catch((e: Error) => {
-        setErr(e.message);
-        setSlots(null);
-      });
-  }, []);
+  const load = useCallback(async () => {
+    const sb = getSupabase();
+    if (!sb || !user) {
+      setErr('ล็อกอิน Google ก่อน แล้วรีเฟรชหน้านี้');
+      setSlots(null);
+      return;
+    }
+    try {
+      const data = await fetchUserOverlaySlots(sb, user.id);
+      setSlots(data);
+      setErr(null);
+    } catch (e) {
+      setErr(e instanceof Error ? e.message : String(e));
+      setSlots(null);
+    }
+  }, [user]);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   async function onFile(slot: ImageSlot, file: File | undefined) {
-    if (!file) return;
+    if (!file || !user) return;
+    const sb = getSupabase();
+    if (!sb) return;
     if (!file.type.startsWith('image/')) {
       setStatus('เลือกไฟล์รูป (PNG, JPG, GIF, WEBP)');
       return;
@@ -85,52 +84,39 @@ export function ImagesConfigPage() {
     setBusy(slot);
     setStatus(null);
     try {
-      const dataUrl = await new Promise<string>((resolve, reject) => {
-        const r = new FileReader();
-        r.onload = () => resolve(String(r.result));
-        r.onerror = () => reject(new Error('อ่านไฟล์ไม่ได้'));
-        r.readAsDataURL(file);
-      });
-      const res = await api<{ slots: Record<ImageSlot, SlotInfo> }>(
-        `${connectorUrl()}/api/image-overlay/upload?webBase=${encodeURIComponent(webBase())}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            type: slot,
-            filename: file.name,
-            dataUrl,
-            webBase: webBase(),
-          }),
-        }
-      );
-      setSlots(res.slots);
-      setStatus(`อัปโหลด ${SLOT_META[slot].label} แล้ว`);
+      const next = await uploadUserOverlayImage(sb, user.id, slot, file);
+      setSlots(next);
+      setStatus(`อัปโหลด ${SLOT_META[slot].label} แล้ว — บันทึกในบัญชีของคุณ`);
     } catch (e) {
-      setStatus(e instanceof Error ? e.message : 'อัปโหลดไม่สำเร็จ — เปิด Connector');
+      setStatus(e instanceof Error ? e.message : 'อัปโหลดไม่สำเร็จ');
     } finally {
       setBusy(null);
     }
   }
 
-  async function resetSlot(slot: ImageSlot) {
+  async function removeSlot(slot: ImageSlot) {
+    if (!user) return;
+    const sb = getSupabase();
+    if (!sb) return;
     setBusy(slot);
+    setStatus(null);
     try {
-      const res = await api<{ slots: Record<ImageSlot, SlotInfo> }>(
-        `${connectorUrl()}/api/image-overlay/reset?webBase=${encodeURIComponent(webBase())}`,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ type: slot, webBase: webBase() }),
-        }
-      );
-      setSlots(res.slots);
-      setStatus(`ใช้รูปเริ่มต้นสำหรับ ${SLOT_META[slot].label}`);
-    } catch {
-      setStatus('รีเซ็ตไม่สำเร็จ');
+      const next = await deleteUserOverlayImage(sb, user.id, slot);
+      setSlots(next);
+      setStatus(`ลบรูปแล้ว — ใช้รูป demo สำหรับ ${SLOT_META[slot].label}`);
+    } catch (e) {
+      setStatus(e instanceof Error ? e.message : 'ลบไม่สำเร็จ');
     } finally {
       setBusy(null);
     }
+  }
+
+  if (!supabaseConfigured) {
+    return (
+      <p className="text-sm text-tsz-muted">
+        ตั้งค่า Supabase ใน <code className="rounded bg-tsz-bg px-1">.env</code> ก่อน
+      </p>
+    );
   }
 
   return (
@@ -139,8 +125,13 @@ export function ImagesConfigPage() {
         <h1 className="mb-2 text-2xl font-semibold tracking-tight">ตั้งค่ารูปภาพ</h1>
         <p className="text-sm leading-relaxed text-tsz-muted">
           อัปโหลดรูปสำหรับวิดเจ็ต <strong className="text-tsz-text">Image Overlay</strong> ใน OBS —
-          รองรับ PNG, JPG, GIF (เคลื่อนไหวได้) · เก็บในเครื่องที่รัน Connector
+          เก็บแยกตามบัญชีของคุณบน Supabase · ช่องที่ยังไม่เคยอัปโหลดจะใช้รูป demo
         </p>
+        {user?.id && (
+          <p className="mt-2 font-mono text-[11px] text-tsz-muted/80">
+            รหัสบัญชี: {user.id}
+          </p>
+        )}
         <p className="mt-2 text-xs text-tsz-muted">
           หลังตั้งค่า → ไปที่{' '}
           <Link to="/app/widgets" className="text-tsz-accent underline">
@@ -152,7 +143,15 @@ export function ImagesConfigPage() {
 
       {err && (
         <p className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
-          เปิด Connector ก่อน (หน้าเชื่อมต่อ) — {err}
+          {err}
+          {err.includes('relation') || err.includes('bucket') ? (
+            <>
+              {' '}
+              — รัน migration{' '}
+              <code className="rounded bg-white/80 px-1">20250519130000_user_overlay_images.sql</code>{' '}
+              ใน Supabase SQL Editor
+            </>
+          ) : null}
         </p>
       )}
 
@@ -163,20 +162,10 @@ export function ImagesConfigPage() {
       )}
 
       <div className="grid gap-6 sm:grid-cols-2">
-        {(Object.keys(SLOT_META) as ImageSlot[]).map((slot) => {
+        {IMAGE_SLOTS.map((slot) => {
           const meta = SLOT_META[slot];
           const info = slots?.[slot];
-          const src =
-            info?.url ||
-            legacySamplePath(
-              slot === 'positive'
-                ? 'positive.png'
-                : slot === 'negative'
-                  ? 'negative.png'
-                  : slot === 'heart'
-                    ? 'heart.png'
-                    : 'hammer.png'
-            );
+          const src = info?.url ?? '';
           return (
             <article
               key={slot}
@@ -194,17 +183,21 @@ export function ImagesConfigPage() {
                   </span>
                 ) : (
                   <span className="rounded-full bg-tsz-bg px-2 py-0.5 text-[10px] text-tsz-muted">
-                    เริ่มต้น
+                    รูป demo
                   </span>
                 )}
               </div>
 
               <div className="mb-4 flex aspect-square items-center justify-center overflow-hidden rounded-xl border border-tsz-border bg-tsz-bg/50 p-4">
-                <img
-                  src={src}
-                  alt={meta.label}
-                  className="max-h-full max-w-full object-contain"
-                />
+                {src ? (
+                  <img
+                    src={src}
+                    alt={meta.label}
+                    className="max-h-full max-w-full object-contain"
+                  />
+                ) : (
+                  <div className="h-8 w-8 animate-spin rounded-full border-2 border-tsz-border border-t-tsz-accent" />
+                )}
               </div>
 
               <div className="mt-auto flex flex-col gap-2">
@@ -214,17 +207,17 @@ export function ImagesConfigPage() {
                     type="file"
                     accept="image/png,image/jpeg,image/gif,image/webp"
                     className="hidden"
-                    disabled={!!busy}
+                    disabled={!!busy || !user}
                     onChange={(e) => void onFile(slot, e.target.files?.[0])}
                   />
                 </label>
                 <button
                   type="button"
-                  className="rounded-lg border border-tsz-border py-2 text-xs hover:bg-tsz-bg disabled:opacity-40"
+                  className="rounded-lg border border-red-200 py-2 text-xs text-red-700 hover:bg-red-50 disabled:opacity-40"
                   disabled={!!busy || !info?.isCustom}
-                  onClick={() => void resetSlot(slot)}
+                  onClick={() => void removeSlot(slot)}
                 >
-                  ใช้รูปเริ่มต้น
+                  ลบรูป
                 </button>
               </div>
             </article>
@@ -235,7 +228,7 @@ export function ImagesConfigPage() {
       <section className="rounded-xl border border-blue-200/70 bg-blue-50/50 p-5 text-sm text-tsz-muted">
         <h3 className="mb-2 font-semibold text-tsz-text">วิธีใช้ใน OBS</h3>
         <ol className="list-decimal space-y-1 pl-5">
-          <li>อัปโหลดรูปทั้ง 4 ช่อง (หรือใช้รูปเริ่มต้น)</li>
+          <li>อัปโหลดรูปทั้ง 4 ช่อง (หรือปล่อยให้เป็นรูป demo)</li>
           <li>
             เปิดหน้า <Link to="/app/widgets" className="text-tsz-accent underline">Widgets</Link>{' '}
             → คัดลอก URL วิดเจ็ต Image

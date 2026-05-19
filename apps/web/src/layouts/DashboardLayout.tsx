@@ -17,13 +17,13 @@ export function DashboardLayout() {
 
   return (
     <AppShell>
-      <div className="flex min-h-full flex-col md:flex-row">
-        <aside className="tsz-glass-sidebar border-b border-white/10 px-6 py-4 shadow-card md:w-60 md:border-b-0 md:border-r">
-          <div className="mb-6">
+      <div className="flex min-h-0 flex-1 flex-col md:flex-row">
+        <aside className="tsz-glass-sidebar flex min-h-0 flex-1 flex-col border-b border-white/10 px-6 py-4 shadow-card md:min-h-full md:w-60 md:shrink-0 md:flex-none md:border-b-0 md:border-r md:py-6">
+          <div className="mb-6 shrink-0">
             <BrandLogo size="sm" showSubtitle={false} />
             <p className="mt-2 text-center text-xs text-white/50">แดชบอร์ดสตรีม</p>
           </div>
-          <nav className="flex gap-2 overflow-x-auto pb-1 md:flex-col md:gap-1 md:overflow-visible md:pb-0">
+          <nav className="flex shrink-0 gap-2 overflow-x-auto pb-1 md:flex-col md:gap-1 md:overflow-visible md:pb-0">
             {tabs.map((t) => (
               <NavLink
                 key={t.to}
@@ -40,7 +40,8 @@ export function DashboardLayout() {
               </NavLink>
             ))}
           </nav>
-          <div className="mt-8 hidden border-t border-white/10 pt-6 md:block">
+          <div className="hidden min-h-0 flex-1 md:block" aria-hidden />
+          <div className="mt-auto hidden shrink-0 border-t border-white/10 pt-6 md:block">
             <p className="mb-2 truncate text-xs text-white/50" title={email}>
               {email}
             </p>

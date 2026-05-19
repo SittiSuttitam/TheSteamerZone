@@ -1,44 +1,46 @@
 import { useEffect, useRef, useState } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
-import { connectorUrl, api } from '../lib/connector';
-import { legacySamplePath } from '../lib/legacySamples';
+import { getSupabase } from '../lib/supabase';
+import {
+  IMAGE_SLOTS,
+  type ImageSlot,
+  demoUrl,
+  fetchRoomOwnerOverlaySlots,
+  slotsToUrlMap,
+} from '../lib/imageOverlayCloud';
 import { useRoomBroadcast } from '../hooks/useRoomBroadcast';
 import { useRoomChannel } from '../hooks/useRoomChannel';
 
-type ImageSlot = 'positive' | 'negative' | 'heart' | 'hammer';
 type SlotMap = Record<ImageSlot, string>;
 
-const LEGACY: SlotMap = {
-  positive: legacySamplePath('positive.png'),
-  negative: legacySamplePath('negative.png'),
-  heart: legacySamplePath('heart.png'),
-  hammer: legacySamplePath('hammer.png'),
-};
+function defaultUrls(): SlotMap {
+  const urls = {} as SlotMap;
+  for (const slot of IMAGE_SLOTS) {
+    urls[slot] = demoUrl(slot);
+  }
+  return urls;
+}
 
 export function ImageWidget() {
   const { roomId } = useParams<{ roomId: string }>();
   const [search] = useSearchParams();
   const token = search.get('token');
   const { state } = useRoomBroadcast(roomId, token);
-  const [urls, setUrls] = useState<SlotMap>(LEGACY);
+  const [urls, setUrls] = useState<SlotMap>(defaultUrls);
   const prevWin = useRef(0);
-  const [mainSrc, setMainSrc] = useState(LEGACY.positive);
+  const [mainSrc, setMainSrc] = useState(() => demoUrl('positive'));
   const [burst, setBurst] = useState<'heart' | 'hammer' | null>(null);
 
   useEffect(() => {
-    const webBase = window.location.origin;
-    api<{ slots: Record<ImageSlot, { url: string }> }>(
-      `${connectorUrl()}/api/image-overlay/config?webBase=${encodeURIComponent(webBase)}`
-    )
-      .then((d) => {
-        const next = { ...LEGACY };
-        for (const k of Object.keys(LEGACY) as ImageSlot[]) {
-          if (d.slots[k]?.url) next[k] = d.slots[k].url;
-        }
-        setUrls(next);
-      })
-      .catch(() => setUrls(LEGACY));
-  }, []);
+    const sb = getSupabase();
+    if (!sb || !roomId) {
+      setUrls(defaultUrls());
+      return;
+    }
+    void fetchRoomOwnerOverlaySlots(sb, roomId)
+      .then((slots) => setUrls(slotsToUrlMap(slots)))
+      .catch(() => setUrls(defaultUrls()));
+  }, [roomId]);
 
   useEffect(() => {
     const win = state?.win ?? 0;
