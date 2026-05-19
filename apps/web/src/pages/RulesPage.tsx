@@ -4,7 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { useRoomCredentials } from '../hooks/useRoomCredentials';
 import { getSupabase } from '../lib/supabase';
 import { fetchRoomGiftConfig } from '../lib/giftConfigCloud';
-import { connectorUrl, api } from '../lib/connector';
+import { canReachLocalConnector, connectorUrl, api } from '../lib/connector';
 
 export function RulesPage() {
   const { user, supabaseConfigured } = useAuth();
@@ -36,14 +36,16 @@ export function RulesPage() {
       const data = await fetchRoomGiftConfig(sb, roomId);
       setConfig(data);
       setErr(null);
-      try {
-        await api(`${connectorUrl()}/api/config/gift`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(data),
-        });
-      } catch {
-        /* connector offline — cloud copy is source of truth */
+      if (canReachLocalConnector()) {
+        try {
+          await api(`${connectorUrl()}/api/config/gift`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+          });
+        } catch {
+          /* connector offline — ใช้ข้อมูลจากคลาวด์ */
+        }
       }
     } catch (e) {
       setErr(e instanceof Error ? e.message : String(e));

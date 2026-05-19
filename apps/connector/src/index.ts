@@ -488,6 +488,29 @@ function checkAndNotifyVip(data: Record<string, unknown>, eventType: string) {
 }
 
 const app = express();
+
+/** ให้เว็บ HTTPS (Vercel) เรียก Connector บนเครื่องได้ — Chrome Private Network Access */
+app.use((req, res, next) => {
+  if (req.headers['access-control-request-private-network'] === 'true') {
+    res.setHeader('Access-Control-Allow-Private-Network', 'true');
+  }
+  res.setHeader('Access-Control-Allow-Origin', req.headers.origin || '*');
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  if (req.method === 'OPTIONS') {
+    res.setHeader(
+      'Access-Control-Allow-Methods',
+      'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS'
+    );
+    res.setHeader(
+      'Access-Control-Allow-Headers',
+      req.headers['access-control-request-headers'] || 'Content-Type, Authorization'
+    );
+    res.status(204).end();
+    return;
+  }
+  next();
+});
+
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: '4mb' }));
 app.use('/images', express.static(imagesDir(activeDataDir())));

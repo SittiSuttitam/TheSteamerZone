@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { connectorUrl, api } from '../lib/connector';
+import { canReachLocalConnector, connectorUrl, api } from '../lib/connector';
 import { DEFAULT_GIFT_CONFIG } from '../lib/defaultGiftConfig';
 import { getSupabase } from '../lib/supabase';
 import { saveRoomGiftConfig } from '../lib/giftConfigCloud';
@@ -92,16 +92,22 @@ export function GiftRulesEditor({
       const sb = getSupabase();
       if (!sb) throw new Error('ยังไม่ตั้งค่า Supabase');
       await saveRoomGiftConfig(sb, rid, cfg);
-      try {
-        await api(`${connectorUrl()}/api/config/gift`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(cfg),
-        });
-        onSaved('บันทึกกฎของขวัญแล้ว (คลาวด์ + Connector)');
-      } catch {
-        onSaved('บันทึกบนคลาวด์แล้ว — เปิด Connector แล้วกดเชื่อมต่อเพื่อใช้กับ TikTok Live');
+      if (canReachLocalConnector()) {
+        try {
+          await api(`${connectorUrl()}/api/config/gift`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(cfg),
+          });
+          onSaved('บันทึกกฎของขวัญแล้ว (คลาวด์ + Connector)');
+          return;
+        } catch {
+          /* fall through */
+        }
       }
+      onSaved(
+        'บันทึกบนคลาวด์แล้ว — เปิด Connector บนเครื่องแล้วกด「เชื่อมต่อทั้งหมด」เพื่อใช้กับ TikTok Live'
+      );
     } catch (e) {
       onSaved(e instanceof Error ? e.message : 'บันทึกไม่สำเร็จ');
     } finally {

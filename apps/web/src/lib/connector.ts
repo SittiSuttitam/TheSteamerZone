@@ -1,5 +1,27 @@
 import { getProductionSiteUrl } from './appUrl';
 
+/**
+ * เว็บ HTTPS (Vercel) เรียก 127.0.0.1 ได้เฉพาะเมื่อ Connector ตอบ Private Network Access
+ * หรือเปิดแดชบอร์ดจาก localhost — ใช้เช็กก่อน sync ไม่บังคับ
+ */
+export function canReachLocalConnector(): boolean {
+  if (typeof window === 'undefined') return false;
+  const base = connectorUrl();
+  try {
+    const u = new URL(base);
+    const isLoopback =
+      u.hostname === 'localhost' ||
+      u.hostname === '127.0.0.1' ||
+      u.hostname === '[::1]';
+    if (!isLoopback) return true;
+    if (window.location.protocol !== 'https:') return true;
+    const h = window.location.hostname;
+    return h === 'localhost' || h === '127.0.0.1';
+  } catch {
+    return false;
+  }
+}
+
 /** Base URL for the desktop connector (local). Override in production dashboard. */
 export function connectorUrl(): string {
   const fromEnv = import.meta.env.VITE_CONNECTOR_URL as string | undefined;
