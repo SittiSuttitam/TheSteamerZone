@@ -10,6 +10,7 @@ import {
 import type { Session, User } from '@supabase/supabase-js';
 import { getSupabase } from '../lib/supabase';
 import { oauthRedirectPath } from '../lib/appUrl';
+import { exchangeOAuthCodeIfPresent } from '../lib/oauthExchange';
 
 type AuthState = {
   user: User | null;
@@ -48,17 +49,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     const timeout = window.setTimeout(finish, SESSION_TIMEOUT_MS);
 
-    void s.auth
-      .getSession()
-      .then(({ data, error }) => {
+    void (async () => {
+      try {
+        const { error: exchangeErr } = await exchangeOAuthCodeIfPresent(s);
+        if (exchangeErr) {
+          setAuthError(exchangeErr);
+          finish();
+          return;
+        }
+        const { data, error } = await s.auth.getSession();
         if (error) setAuthError(error.message);
         setSession(data.session ?? null);
-        finish();
-      })
-      .catch((e: unknown) => {
+      } catch (e: unknown) {
         setAuthError(e instanceof Error ? e.message : String(e));
+      } finally {
         finish();
-      });
+      }
+    })();
 
     const { data: sub } = s.auth.onAuthStateChange((_event, next) => {
       setSession(next);

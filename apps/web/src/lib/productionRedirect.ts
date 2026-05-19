@@ -27,7 +27,7 @@ export function redirectOffLocalhostAfterOAuth(): void {
     path === '/login' ||
     path === '/auth/callback' ||
     path.startsWith('/auth/');
-  target.pathname = isAuthPath ? '/auth/callback' : path;
+  target.pathname = isAuthPath ? '/app/connection' : path;
   target.search = window.location.search;
   target.hash = window.location.hash;
   window.location.replace(target.href);

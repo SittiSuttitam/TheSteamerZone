@@ -1,4 +1,4 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { RequireAuth } from './components/RequireAuth';
 import { DashboardLayout } from './layouts/DashboardLayout';
 import { LoginPage } from './pages/LoginPage';
@@ -18,12 +18,17 @@ import { ActivityWidget } from './widgets/ActivityWidget';
 import { ChatWidget } from './widgets/ChatWidget';
 import { SoundWidget } from './widgets/SoundWidget';
 
+function HomeRedirect() {
+  const { search } = useLocation();
+  return <Navigate to={`/app/connection${search}`} replace />;
+}
+
 export default function App() {
   return (
     <Routes>
       <Route path="/login" element={<LoginPage />} />
       <Route path="/auth/callback" element={<AuthCallbackPage />} />
-      <Route path="/" element={<Navigate to="/app/connection" replace />} />
+      <Route path="/" element={<HomeRedirect />} />
       <Route
         path="/app"
         element={

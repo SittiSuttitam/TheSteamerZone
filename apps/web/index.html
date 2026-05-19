@@ -26,7 +26,7 @@
         var p = location.pathname;
         u.pathname =
           p === '/' || p === '/login' || p.indexOf('/auth') === 0
-            ? '/auth/callback'
+            ? '/app/connection'
             : p;
         u.search = location.search;
         u.hash = hash;
