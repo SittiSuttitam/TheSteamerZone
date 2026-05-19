@@ -7,6 +7,28 @@
     <link rel="icon" type="image/png" href="/icon.png" />
   </head>
   <body class="antialiased">
+    <script>
+      (function () {
+        var prod = 'https://thesteamerzone.vercel.app';
+        var host = location.hostname;
+        if (host !== 'localhost' && host !== '127.0.0.1') return;
+        var q = location.search;
+        var hash = location.hash;
+        if (
+          !hash.includes('access_token') &&
+          !q.includes('code=') &&
+          !hash.includes('error=') &&
+          !q.includes('error=')
+        )
+          return;
+        var u = new URL(prod);
+        var p = location.pathname;
+        u.pathname = p === '/' || p === '/login' ? '/app/connection' : p;
+        u.search = q;
+        u.hash = hash;
+        location.replace(u.href);
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

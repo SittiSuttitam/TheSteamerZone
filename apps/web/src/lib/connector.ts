@@ -1,3 +1,5 @@
+import { getProductionSiteUrl } from './appUrl';
+
 /** Base URL for the desktop connector (local). Override in production dashboard. */
 export function connectorUrl(): string {
   const fromEnv = import.meta.env.VITE_CONNECTOR_URL as string | undefined;
@@ -35,7 +37,7 @@ export function connectorFetchError(url: string, cause?: unknown): string {
     window.location.protocol === 'https:' &&
     isLocal
   ) {
-    return 'เว็บ HTTPS (เช่น Vercel) เชื่อมโปรแกรมบนเครื่องไม่ได้ — เปิดแดชบอร์ดที่ http://localhost:5173';
+    return `เว็บ HTTPS เรียก Connector บนเครื่องโดยตรงไม่ได้ — เปิดแดชบอร์ดที่ ${getProductionSiteUrl()} แล้วเปิดโปรแกรม Connector`;
   }
   if (isLocal) {
     return 'เปิดโปรแกรม TheSteamerZone Connector บนเครื่องก่อน (หรือรัน npm run dev:connector)';

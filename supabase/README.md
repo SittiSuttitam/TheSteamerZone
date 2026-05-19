@@ -14,11 +14,12 @@ Or paste both files in SQL Editor (in order):
 - `supabase/migrations/20250519120000_bootstrap_user_room.sql` (auto room on signup)
 
 3. **Auth → Providers:** enable Google (Client ID / Secret from Google Cloud Console).
-4. **Authentication → URL config** (สำคัญ — ถ้าผิดจะ redirect ไป localhost):
-   - **Site URL:** `https://thesteamerzone.vercel.app`
-   - **Redirect URLs:**  
-     `https://thesteamerzone.vercel.app/**`  
-     `http://localhost:5173/**`
+4. **Authentication → URL Configuration** (ถ้าไม่แก้ หลัง login จะไป `localhost:5173` เสมอ):
+   - **Site URL:** `https://thesteamerzone.vercel.app` (ห้ามใช้ localhost เป็น Site URL บน production)
+   - **Redirect URLs** (เพิ่มครบทุกบรรทัด):
+     - `https://thesteamerzone.vercel.app/**`
+     - `https://thesteamerzone.vercel.app/app/connection`
+     - `http://localhost:5173/**` (เฉพาะ dev บนเครื่อง)
 5. **Realtime:** ensure `live_state` is in publication (migration adds it).
 
 ## Env (apps/web `.env`)

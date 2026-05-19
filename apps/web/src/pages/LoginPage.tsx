@@ -1,15 +1,14 @@
 import { Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { AppShell } from '../components/AppShell';
-import { getConfiguredAppUrl } from '../lib/appUrl';
+import { getProductionSiteUrl, isLocalDevHost } from '../lib/appUrl';
 
 export function LoginPage() {
   const { user, loading, supabaseConfigured, signInWithGoogle } = useAuth();
   const location = useLocation();
   const from = (location.state as { from?: string } | null)?.from || '/app/connection';
-  const prodUrl = getConfiguredAppUrl();
-  const onLocalhost =
-    typeof window !== 'undefined' && window.location.hostname === 'localhost';
+  const prodUrl = getProductionSiteUrl();
+  const onLocalhost = typeof window !== 'undefined' && isLocalDevHost();
 
   if (!supabaseConfigured) {
     return (

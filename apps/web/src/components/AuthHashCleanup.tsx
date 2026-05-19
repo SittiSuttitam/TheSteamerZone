@@ -1,20 +1,25 @@
 import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-
-/** ลบ #access_token ออกจาก URL หลัง OAuth และพาเข้าแดชบอร์ด */
+/** ลบ auth params จาก URL หลัง OAuth + รองรับ PKCE (?code=) */
 export function AuthHashCleanup() {
   const navigate = useNavigate();
 
   useEffect(() => {
-    const hash = window.location.hash;
-    if (!hash || (!hash.includes('access_token') && !hash.includes('error='))) return;
+    const { pathname, search, hash } = window.location;
+    const hasHashAuth =
+      hash.includes('access_token') || hash.includes('error=');
+    const hasQueryAuth =
+      search.includes('code=') || search.includes('error=');
 
-    const path = window.location.pathname;
+    if (!hasHashAuth && !hasQueryAuth) return;
+
     const target =
-      path === '/' || path === '/login' ? '/app/connection' : path;
+      pathname === '/' || pathname === '/login' ? '/app/connection' : pathname;
 
-    window.history.replaceState(null, '', target + window.location.search);
-    if (path === '/' || path === '/login') {
+    const cleanUrl = target + (hasQueryAuth ? search : '');
+    window.history.replaceState(null, '', cleanUrl);
+
+    if (pathname === '/' || pathname === '/login') {
       navigate(target, { replace: true });
     }
   }, [navigate]);

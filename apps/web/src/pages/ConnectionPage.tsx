@@ -6,6 +6,7 @@ import { useAuth } from '../context/AuthContext';
 import { useRoomCredentials } from '../hooks/useRoomCredentials';
 import { connectorUrl, api } from '../lib/connector';
 import { getFreshSessionTokens } from '../lib/sessionTokens';
+import { getAppOrigin } from '../lib/appUrl';
 
 type QuickResult = {
   webLinked?: boolean;
@@ -72,7 +73,7 @@ export function ConnectionPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           roomId: rid,
-          dashboardUrl: window.location.origin,
+          dashboardUrl: getAppOrigin(),
           tiktokUsername: tiktok.trim() || undefined,
           accessToken: tokens.accessToken,
           refreshToken: tokens.refreshToken,
