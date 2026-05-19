@@ -112,14 +112,24 @@ async function main() {
 
   // ผู้ build ใส่ apps/connector/.env ก่อน build — จะฝังในโปรแกรม (ผู้ใช้ทั่วไปไม่เห็น)
   const builderEnv = path.join(ROOT, 'apps/connector/.env');
+  const PRODUCTION_WEB = 'https://thesteamerzone.vercel.app';
   if (fs.existsSync(builderEnv)) {
-    fs.copyFileSync(builderEnv, path.join(RES, '.env'));
-    const envText = fs.readFileSync(builderEnv, 'utf8');
-    const hasUrl = /SUPABASE_URL=\s*\S+/.test(envText);
+    let envText = fs.readFileSync(builderEnv, 'utf8');
+    if (/^WEB_PUBLIC_URL\s*=/m.test(envText)) {
+      envText = envText.replace(
+        /^WEB_PUBLIC_URL\s*=.*$/m,
+        `WEB_PUBLIC_URL=${PRODUCTION_WEB}`
+      );
+    } else {
+      envText = `${envText.trimEnd()}\nWEB_PUBLIC_URL=${PRODUCTION_WEB}\n`;
+    }
+    fs.writeFileSync(path.join(RES, '.env'), envText);
+    const envTextCheck = envText;
+    const hasUrl = /SUPABASE_URL=\s*\S+/.test(envTextCheck);
     const hasKey =
-      /SUPABASE_SERVICE_ROLE_KEY=\s*\S+/.test(envText) ||
-      /SUPABASE_ANON_KEY=\s*\S+/.test(envText) ||
-      /SUPABASE_PUBLISHABLE_KEY=\s*\S+/.test(envText);
+      /SUPABASE_SERVICE_ROLE_KEY=\s*\S+/.test(envTextCheck) ||
+      /SUPABASE_ANON_KEY=\s*\S+/.test(envTextCheck) ||
+      /SUPABASE_PUBLISHABLE_KEY=\s*\S+/.test(envTextCheck);
     if (hasUrl && hasKey) {
       log('ฝัง Supabase จาก apps/connector/.env');
     } else {

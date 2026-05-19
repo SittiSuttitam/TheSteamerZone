@@ -3,8 +3,9 @@ const path = require('path');
 const fs = require('fs');
 const { spawn } = require('child_process');
 
+const { resolveDashboardUrl } = require('./config.cjs');
+
 const PORT = 8780;
-const DASHBOARD_URL = 'http://localhost:5173';
 
 let mainWindow = null;
 let connectorProc = null;
@@ -206,13 +207,16 @@ ipcMain.handle('connect-tiktok', async (_e, username) => {
   return j;
 });
 
-ipcMain.handle('get-paths', () => ({
-  connectorRoot: connectorRoot(),
-  dataDir: dataDirHint(),
-  port: PORT,
-  dashboardUrl: DASHBOARD_URL,
-  connectionUrl: `${DASHBOARD_URL}/app/connection`,
-}));
+ipcMain.handle('get-paths', () => {
+  const dashboardUrl = resolveDashboardUrl({ connectorRoot: connectorRoot(), fs });
+  return {
+    connectorRoot: connectorRoot(),
+    dataDir: dataDirHint(),
+    port: PORT,
+    dashboardUrl,
+    connectionUrl: `${dashboardUrl}/app/connection`,
+  };
+});
 
 ipcMain.handle('open-external', (_e, url) => {
   void shell.openExternal(url);

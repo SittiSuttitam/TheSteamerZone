@@ -81,7 +81,7 @@ echo.
 echo  TheSteamerZone Connector
 echo  http://127.0.0.1:8780
 echo.
-start "" "http://localhost:5173/app/connection" 2>nul
+start "" "https://thesteamerzone.vercel.app/app/connection" 2>nul
 "node\\node.exe" "app\\entry.mjs"
 if errorlevel 1 pause
 `;

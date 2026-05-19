@@ -63,8 +63,10 @@ import {
   saveSoundConfig,
   type SoundConfigFile,
 } from './soundConfig.js';
+import { resolveWebPublicUrl, normalizeDashboardUrl } from './siteUrl.js';
 
 const PORT = Number(process.env.CONNECTOR_PORT || 8780);
+const WEB_PUBLIC_URL = resolveWebPublicUrl();
 const PUBLIC_URL =
   process.env.CONNECTOR_PUBLIC_URL || `http://127.0.0.1:${PORT}`;
 const ROOM_ID = process.env.DEFAULT_ROOM_ID || '';
@@ -158,6 +160,12 @@ ttsSettings = tts.loadSettingsFile(USER_DATA);
 
 let imageOverlayConfig = loadImageOverlayConfig(USER_DATA);
 let userConfig: UserConfigFile = loadUserConfig(USER_DATA);
+{
+  const dash = normalizeDashboardUrl(userConfig.dashboardUrl, WEB_PUBLIC_URL);
+  if (dash && dash !== userConfig.dashboardUrl) {
+    userConfig = saveUserConfig(USER_DATA, { dashboardUrl: dash });
+  }
+}
 let viewerConfig: ViewerConfigFile = loadViewerConfig(USER_DATA);
 let soundConfig: SoundConfigFile = loadSoundConfig(USER_DATA);
 const activeVips = new Map<string, { lastActivity: number; soundPlayed: boolean }>();
@@ -167,8 +175,6 @@ setInterval(() => {
     void refreshSupabase();
   }
 }, 45 * 60 * 1000);
-const WEB_PUBLIC_URL =
-  process.env.WEB_PUBLIC_URL || 'http://localhost:5173';
 
 function maskGoogleKey(key: string): string {
   if (key.length <= 8) return '••••••••';
@@ -318,7 +324,9 @@ function buildSetupStatus() {
     tiktokConnected: tiktokOk,
     roomId: roomOk ? roomId : null,
     roomCode: roomOk ? formatRoomCode(roomId) : null,
-    dashboardUrl: userConfig.dashboardUrl || WEB_PUBLIC_URL.replace(/\/$/, ''),
+    dashboardUrl:
+      normalizeDashboardUrl(userConfig.dashboardUrl, WEB_PUBLIC_URL) ||
+      WEB_PUBLIC_URL,
     linkedAt: userConfig.linkedAt || null,
     cloudSync: cloudOk,
     cloudSyncError: cloudOk ? null : getLastAuthError(),
