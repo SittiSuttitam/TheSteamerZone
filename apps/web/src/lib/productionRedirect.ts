@@ -22,8 +22,12 @@ export function redirectOffLocalhostAfterOAuth(): void {
   const prod = getProductionSiteUrl();
   const target = new URL(prod);
   const path = window.location.pathname;
-  target.pathname =
-    path === '/' || path === '/login' ? '/app/connection' : path;
+  const isAuthPath =
+    path === '/' ||
+    path === '/login' ||
+    path === '/auth/callback' ||
+    path.startsWith('/auth/');
+  target.pathname = isAuthPath ? '/auth/callback' : path;
   target.search = window.location.search;
   target.hash = window.location.hash;
   window.location.replace(target.href);

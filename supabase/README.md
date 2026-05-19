@@ -18,8 +18,9 @@ Or paste both files in SQL Editor (in order):
    - **Site URL:** `https://thesteamerzone.vercel.app` (ห้ามใช้ localhost เป็น Site URL บน production)
    - **Redirect URLs** (เพิ่มครบทุกบรรทัด):
      - `https://thesteamerzone.vercel.app/**`
+     - `https://thesteamerzone.vercel.app/auth/callback`
      - `https://thesteamerzone.vercel.app/app/connection`
-     - `http://localhost:5173/**` (เฉพาะ dev บนเครื่อง)
+     - `http://localhost:5173/**` (เฉพาะ dev — OAuth จะเด้งไป production อัตโนมัติ)
 5. **Realtime:** ensure `live_state` is in publication (migration adds it).
 
 ## Env (apps/web `.env`)

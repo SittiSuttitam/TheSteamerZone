@@ -5,30 +5,36 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>TheSteamerZone</title>
     <link rel="icon" type="image/png" href="/icon.png" />
-  </head>
-  <body class="antialiased">
     <script>
       (function () {
-        var prod = 'https://thesteamerzone.vercel.app';
+        var PROD = 'https://thesteamerzone.vercel.app';
         var host = location.hostname;
         if (host !== 'localhost' && host !== '127.0.0.1') return;
-        var q = location.search;
-        var hash = location.hash;
-        if (
-          !hash.includes('access_token') &&
-          !q.includes('code=') &&
-          !hash.includes('error=') &&
-          !q.includes('error=')
-        )
-          return;
-        var u = new URL(prod);
+
+        var params = new URLSearchParams(location.search);
+        var hash = location.hash || '';
+        var hasAuth =
+          params.has('code') ||
+          params.has('error') ||
+          params.has('error_description') ||
+          hash.indexOf('access_token') !== -1 ||
+          hash.indexOf('error') !== -1;
+
+        if (!hasAuth) return;
+
+        var u = new URL(PROD);
         var p = location.pathname;
-        u.pathname = p === '/' || p === '/login' ? '/app/connection' : p;
-        u.search = q;
+        u.pathname =
+          p === '/' || p === '/login' || p.indexOf('/auth') === 0
+            ? '/auth/callback'
+            : p;
+        u.search = location.search;
         u.hash = hash;
-        location.replace(u.href);
+        location.replace(u.toString());
       })();
     </script>
+  </head>
+  <body class="antialiased">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

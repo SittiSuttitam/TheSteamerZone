@@ -31,8 +31,9 @@ export function getAppOrigin(): string {
   return window.location.origin;
 }
 
+/** OAuth ต้องกลับ production เสมอ — ห้ามใช้ localhost แม้เปิด dev บนเครื่อง */
 export function oauthRedirectPath(): string {
-  return `${getAppOrigin()}/app/connection`;
+  return `${getProductionSiteUrl()}/auth/callback`;
 }
 
 export function widgetBaseUrl(): string {
