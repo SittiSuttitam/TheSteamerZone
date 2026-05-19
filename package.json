@@ -1,0 +1,25 @@
+{
+  "name": "thesteamerzone",
+  "private": true,
+  "version": "0.1.0",
+  "description": "TheSteamerZone — TikTok LIVE overlays, WIN counter, local connector, Supabase Realtime",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:web": "npm run dev -w @thesteamerzone/web",
+    "build:web": "npm run build -w @thesteamerzone/web",
+    "dev:connector": "npm run dev -w @thesteamerzone/connector",
+    "build:connector": "npm run build -w @thesteamerzone/connector",
+    "build": "npm run build:shared && npm run build:web && npm run build:connector",
+    "build:shared": "npm run build -w @thesteamerzone/shared",
+    "test": "node scripts/run-local-tests.mjs",
+    "test:unit": "npm run build:shared && npm run build:connector && node --test tests/unit/shared.test.mjs tests/unit/gifts.test.mjs",
+    "test:integration": "npm run build:connector && node --test tests/integration/connector-api.test.mjs",
+    "lint": "npm run lint -w @thesteamerzone/web --if-present"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
