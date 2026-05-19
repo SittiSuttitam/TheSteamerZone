@@ -179,24 +179,8 @@ async function refreshSupabase(): Promise<boolean> {
   const client = await createConnectorSupabase(userConfig, (tokens) => {
     userConfig = saveUserConfig(BASE_DATA, tokens);
   });
-  if (client) {
-    const { data } = await client.auth.getSession();
-    if (!data.session?.access_token) {
-      applySupabaseClient(null);
-      console.warn('[TheSteamerZone] Supabase session ไม่พร้อม');
-      return false;
-    }
-    if (data.session.access_token !== userConfig.accessToken) {
-      const uid = userIdFromAccessToken(data.session.access_token);
-      userConfig = saveUserConfig(BASE_DATA, {
-        accessToken: data.session.access_token,
-        refreshToken: data.session.refresh_token ?? userConfig.refreshToken,
-        linkedUserId: uid ?? userConfig.linkedUserId,
-      });
-    }
-  }
-  applySupabaseClient(client);
   if (!client) {
+    applySupabaseClient(null);
     const hint = getLastAuthError();
     console.warn(
       '[TheSteamerZone] ซิงก์คลาวด์ปิด',
@@ -204,8 +188,35 @@ async function refreshSupabase(): Promise<boolean> {
     );
     return false;
   }
+  if (usesServiceRole()) {
+    applySupabaseClient(client);
+    console.log('[TheSteamerZone] Supabase พร้อมซิงก์ (service role)');
+    return true;
+  }
+  const { data } = await client.auth.getSession();
+  if (!data.session?.access_token) {
+    applySupabaseClient(null);
+    console.warn('[TheSteamerZone] Supabase session ไม่พร้อม');
+    return false;
+  }
+  if (data.session.access_token !== userConfig.accessToken) {
+    const uid = userIdFromAccessToken(data.session.access_token);
+    userConfig = saveUserConfig(BASE_DATA, {
+      accessToken: data.session.access_token,
+      refreshToken: data.session.refresh_token ?? userConfig.refreshToken,
+      linkedUserId: uid ?? userConfig.linkedUserId,
+    });
+  }
+  applySupabaseClient(client);
   console.log('[TheSteamerZone] Supabase พร้อมซิงก์');
   return true;
+}
+
+/** ให้มี Supabase client ก่อน pair / ซิงก์ (โปรแกรม portable ใช้ service role) */
+async function ensureSupabaseDb(): Promise<SupabaseClient | null> {
+  if (supabaseDb) return supabaseDb;
+  const ok = await refreshSupabase();
+  return ok ? supabaseDb : null;
 }
 
 const giftTracker = createGiftComboTracker((comboData) => {
@@ -597,14 +608,17 @@ app.post('/api/setup/pair', async (req, res) => {
     res.status(400).json({ error: 'ใส่รหัสห้องและรหัสเชื่อมจากเว็บ' });
     return;
   }
-  if (!supabaseDb) {
+  const db = await ensureSupabaseDb();
+  if (!db) {
     res.status(503).json({
-      error: 'โปรแกรมยังไม่มี Supabase — build ใหม่พร้อม SUPABASE_URL + SERVICE_ROLE',
+      error:
+        getLastAuthError() ||
+        'โปรแกรมยังไม่มี Supabase — build ใหม่พร้อม SUPABASE_URL + SERVICE_ROLE',
     });
     return;
   }
   try {
-    const room = await resolveRoomForPairing(supabaseDb, roomCode, pairingSecret);
+    const room = await resolveRoomForPairing(db, roomCode, pairingSecret);
     if (!room) {
       res.status(404).json({ error: 'รหัสห้องหรือรหัสเชื่อมไม่ถูกต้อง' });
       return;
@@ -618,7 +632,7 @@ app.post('/api/setup/pair', async (req, res) => {
       setupCompleted: true,
       linkedAt: new Date().toISOString(),
     });
-    await touchConnectorLinked(supabaseDb, room.id);
+    await touchConnectorLinked(db, room.id);
     const cloudSynced = await refreshSupabase();
     await reloadGiftConfigForRoom();
     await loadLiveExtrasFromCloud();
