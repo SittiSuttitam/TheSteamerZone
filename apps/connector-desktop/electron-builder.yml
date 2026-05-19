@@ -8,6 +8,7 @@ directories:
 
 files:
   - main.cjs
+  - config.cjs
   - preload.cjs
   - index.html
   - renderer.js
