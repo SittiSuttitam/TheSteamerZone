@@ -1,5 +1,16 @@
 # Supabase setup (TheSteamerZone)
 
+## Cursor MCP (แนะนำ)
+
+ตั้งค่าแล้วใน `.cursor/mcp.json` — เปิด Cursor → **Settings → Tools & MCP** → ล็อกอิน Supabase (OAuth) → รีสตาร์ท Cursor
+
+- โปรเจกต์: `kipszrqegcdebzdrupkd`
+- ใช้รัน migration / ดูตาราง / SQL จากแชทได้ (เช่น “list tables with MCP”)
+
+เอกสาร: [Supabase MCP](https://supabase.com/docs/guides/ai-tools/mcp)
+
+---
+
 1. Create project at [supabase.com](https://supabase.com).
 2. Run migrations:
 

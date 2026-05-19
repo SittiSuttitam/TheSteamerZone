@@ -4,7 +4,12 @@ import { LinkStatusBar } from '../components/LinkStatusBar';
 import { SetupChecklist } from '../components/SetupChecklist';
 import { useAuth } from '../context/AuthContext';
 import { useRoomCredentials } from '../hooks/useRoomCredentials';
-import { connectorUrl, api } from '../lib/connector';
+import {
+  canReachLocalConnector,
+  connectorUrl,
+  api,
+  isRemoteHttpsDashboard,
+} from '../lib/connector';
 import { getFreshSessionTokens } from '../lib/sessionTokens';
 import { getAppOrigin } from '../lib/appUrl';
 
@@ -134,6 +139,12 @@ export function ConnectionPage() {
           ปุ่มเดียวจัดการ: โหลดห้อง + เชื่อมเว็บกับโปรแกรม
           {tiktok.trim() ? ' + TikTok Live' : ''}
         </p>
+        {isRemoteHttpsDashboard() && !canReachLocalConnector() && (
+          <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
+            เปิด TheSteamerZone Connector บนเครื่องก่อน แล้วกดปุ่มด้านล่าง — เบราว์เซอร์อาจถาม
+            อนุญาตเครือข่ายภายใน (Local network) เพื่อเชื่อมกับโปรแกรม
+          </p>
+        )}
 
         {room.user ? (
           <p className="mb-3 text-sm text-tsz-muted">

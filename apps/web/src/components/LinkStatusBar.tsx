@@ -1,5 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
-import { connectorUrl, api } from '../lib/connector';
+import {
+  canReachLocalConnector,
+  connectorApi,
+  isRemoteHttpsDashboard,
+} from '../lib/connector';
 
 type SetupPayload = {
   webLinked?: boolean;
@@ -29,30 +33,36 @@ export function LinkStatusBar({
   const [setup, setSetup] = useState<SetupPayload | null>(null);
   const onStatusRef = useRef(onStatus);
   onStatusRef.current = onStatus;
+  const remoteHttps = isRemoteHttpsDashboard();
 
   useEffect(() => {
+    if (!canReachLocalConnector()) {
+      setBackendOn(false);
+      setProgramOn(false);
+      setSetup(null);
+      onStatusRef.current?.({ programOn: false, webLinked: false });
+      return;
+    }
     let cancelled = false;
-    const tick = () => {
-      api<HealthPayload>(`${connectorUrl()}/health`)
-        .then((h) => {
-          if (cancelled) return;
-          const desktop = !!h.desktopAppOpen;
-          const linked = !!h.setup?.webLinked;
-          setBackendOn(!!h.ok);
-          setProgramOn(desktop);
-          setSetup(h.setup ?? null);
-          onStatusRef.current?.({ programOn: desktop, webLinked: linked });
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setBackendOn(false);
-          setProgramOn(false);
-          setSetup(null);
-          onStatusRef.current?.({ programOn: false, webLinked: false });
-        });
+    const tick = async () => {
+      const h = await connectorApi<HealthPayload>('/health');
+      if (cancelled) return;
+      if (!h) {
+        setBackendOn(false);
+        setProgramOn(false);
+        setSetup(null);
+        onStatusRef.current?.({ programOn: false, webLinked: false });
+        return;
+      }
+      const desktop = !!h.desktopAppOpen;
+      const linked = !!h.setup?.webLinked;
+      setBackendOn(!!h.ok);
+      setProgramOn(desktop);
+      setSetup(h.setup ?? null);
+      onStatusRef.current?.({ programOn: desktop, webLinked: linked });
     };
-    tick();
-    const id = window.setInterval(tick, 2500);
+    void tick();
+    const id = window.setInterval(() => void tick(), 2500);
     return () => {
       cancelled = true;
       window.clearInterval(id);
@@ -107,7 +117,13 @@ export function LinkStatusBar({
           <strong className="font-mono text-base text-tsz-text">{setup.roomCode}</strong>
         </p>
       )}
-      {!programOn && (
+      {remoteHttps && !canReachLocalConnector() && (
+        <p className="mt-2 text-center text-xs text-amber-900">
+          เปิดโปรแกรม Connector บนเครื่อง แล้วกด「เชื่อมต่อทั้งหมด」 — Chrome อาจถามอนุญาต
+          เครือข่ายภายใน (Local network) ครั้งแรก
+        </p>
+      )}
+      {!programOn && !(remoteHttps && !canReachLocalConnector()) && (
         <p className="mt-2 text-center text-xs text-amber-900">
           {backendOn && wasConfigured
             ? 'ปิดโปรแกรมแล้ว — เปิด TheSteamerZone Connector แล้วกดเชื่อมต่ออีกครั้ง'

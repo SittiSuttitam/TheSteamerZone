@@ -22,6 +22,30 @@ export function canReachLocalConnector(): boolean {
   }
 }
 
+/** แดชบอร์ดบน Vercel (HTTPS) — ไม่ควร poll loopback ทุก 2–4 วินาที */
+export function isRemoteHttpsDashboard(): boolean {
+  if (typeof window === 'undefined') return false;
+  if (window.location.protocol !== 'https:') return false;
+  const h = window.location.hostname;
+  return h !== 'localhost' && h !== '127.0.0.1';
+}
+
+/** เรียก Connector แบบพื้นหลัง — ไม่ fetch ถ้าเบราว์เซอร์จะบล็อก loopback */
+export async function connectorApi<T>(
+  path: string,
+  init?: RequestInit
+): Promise<T | null> {
+  if (!canReachLocalConnector()) return null;
+  const url = path.startsWith('http')
+    ? path
+    : `${connectorUrl()}${path.startsWith('/') ? path : `/${path}`}`;
+  try {
+    return await api<T>(url, init);
+  } catch {
+    return null;
+  }
+}
+
 /** Base URL for the desktop connector (local). Override in production dashboard. */
 export function connectorUrl(): string {
   const fromEnv = import.meta.env.VITE_CONNECTOR_URL as string | undefined;

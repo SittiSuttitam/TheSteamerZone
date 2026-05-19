@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { connectorUrl, api } from '../lib/connector';
+import {
+  canReachLocalConnector,
+  connectorApi,
+  connectorUrl,
+  api,
+  isRemoteHttpsDashboard,
+} from '../lib/connector';
 import { playWidgetSound } from '../lib/playWidgetSound';
 
 type SoundConfig = {
@@ -16,17 +22,26 @@ export function SoundSettingsPanel() {
   const [msg, setMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const load = useCallback(() => {
-    api<SoundConfig>(`${base}/api/config/sounds`)
-      .then(setCfg)
-      .catch(() => setCfg(null));
-  }, [base]);
+  const remoteOnly = isRemoteHttpsDashboard() && !canReachLocalConnector();
+
+  const load = useCallback(async () => {
+    if (!canReachLocalConnector()) {
+      setCfg(null);
+      return;
+    }
+    const data = await connectorApi<SoundConfig>('/api/config/sounds');
+    setCfg(data);
+  }, []);
 
   useEffect(() => {
-    load();
+    void load();
   }, [load]);
 
   async function uploadFile(file: File) {
+    if (!canReachLocalConnector()) {
+      setMsg('เปิด Connector บนเครื่องและอนุญาต Local network ก่อนอัปโหลด');
+      return;
+    }
     setBusy(true);
     setMsg(null);
     try {
@@ -77,6 +92,13 @@ export function SoundSettingsPanel() {
         <code className="rounded bg-tsz-bg px-1">/sound</code> ใน OBS
       </p>
 
+      {remoteOnly && (
+        <p className="mb-4 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+          จากเว็บ Vercel จัดการไฟล์เสียงบน Connector โดยตรงไม่ได้ — เปิดโปรแกรม Connector
+          บนเครื่อง แล้วกด「เชื่อมต่อทั้งหมด」 (Chrome อาจถามอนุญาตเครือข่ายภายใน)
+        </p>
+      )}
+
       {msg && (
         <p className="mb-3 rounded-lg bg-tsz-bg px-3 py-2 text-sm text-tsz-muted">{msg}</p>
       )}
@@ -95,7 +117,7 @@ export function SoundSettingsPanel() {
         />
         <button
           type="button"
-          disabled={busy}
+          disabled={busy || remoteOnly}
           className="rounded-lg bg-tsz-accent px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           onClick={() => fileRef.current?.click()}
         >

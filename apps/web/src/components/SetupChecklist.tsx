@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { connectorUrl, api } from '../lib/connector';
+import { canReachLocalConnector, connectorApi } from '../lib/connector';
 
 type SetupStep = { id: string; label: string; ok: boolean; hint: string };
 type SetupPayload = {
@@ -15,22 +15,27 @@ export function SetupChecklist({ refreshKey = 0 }: { refreshKey?: number }) {
   const [connectorOk, setConnectorOk] = useState(false);
 
   useEffect(() => {
+    if (!canReachLocalConnector()) {
+      setConnectorOk(false);
+      setSetup(null);
+      return;
+    }
     let cancelled = false;
-    const tick = () => {
-      api<{ ok?: boolean; setup?: SetupPayload }>(`${connectorUrl()}/health`)
-        .then((h) => {
-          if (cancelled) return;
-          setConnectorOk(!!h.ok);
-          setSetup(h.setup ?? null);
-        })
-        .catch(() => {
-          if (cancelled) return;
-          setConnectorOk(false);
-          setSetup(null);
-        });
+    const tick = async () => {
+      const h = await connectorApi<{ ok?: boolean; setup?: SetupPayload }>(
+        '/health'
+      );
+      if (cancelled) return;
+      if (!h) {
+        setConnectorOk(false);
+        setSetup(null);
+        return;
+      }
+      setConnectorOk(!!h.ok);
+      setSetup(h.setup ?? null);
     };
-    tick();
-    const id = window.setInterval(tick, 4000);
+    void tick();
+    const id = window.setInterval(() => void tick(), 4000);
     return () => {
       cancelled = true;
       window.clearInterval(id);

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { connectorUrl, api } from '../lib/connector';
+import { canReachLocalConnector, connectorApi, connectorUrl, api } from '../lib/connector';
 import { playWidgetSound } from '../lib/playWidgetSound';
 
 type ViewerConfig = {
@@ -61,34 +61,44 @@ export function WidgetTestPanel({ roomReady }: Props) {
     []
   );
 
-  const loadViewer = useCallback(() => {
-    api<ViewerConfig>(`${base}/api/config/viewer`)
-      .then((v) => {
-        setViewer(v);
-        if (v.sounds?.length) setVipSound(v.sounds[0]);
-      })
-      .catch(() => setViewer(null));
-    api<{ incrementFile: string; decrementFile: string; files: string[] }>(
-      `${base}/api/config/sounds`
-    )
-      .then((s) =>
-        setWinSounds({
-          incrementFile: s.incrementFile || 'increment.mp3',
-          decrementFile: s.decrementFile || 'decrement.mp3',
-        })
-      )
-      .catch(() => {});
-  }, [base]);
+  const loadViewer = useCallback(async () => {
+    if (!canReachLocalConnector()) {
+      setViewer(null);
+      return;
+    }
+    const v = await connectorApi<ViewerConfig>('/api/config/viewer');
+    if (v) {
+      setViewer(v);
+      if (v.sounds?.length) setVipSound(v.sounds[0]);
+    } else {
+      setViewer(null);
+    }
+    const s = await connectorApi<{
+      incrementFile: string;
+      decrementFile: string;
+      files: string[];
+    }>('/api/config/sounds');
+    if (s) {
+      setWinSounds({
+        incrementFile: s.incrementFile || 'increment.mp3',
+        decrementFile: s.decrementFile || 'decrement.mp3',
+      });
+    }
+  }, []);
 
   useEffect(() => {
-    loadViewer();
+    void loadViewer();
   }, [loadViewer]);
 
   useEffect(() => {
-    api<{ cloudReady?: boolean; supabase?: boolean }>(`${base}/health`)
-      .then((h) => setCloudReady(!!(h.cloudReady ?? h.supabase)))
-      .catch(() => setCloudReady(false));
-  }, [base]);
+    if (!canReachLocalConnector()) {
+      setCloudReady(null);
+      return;
+    }
+    void connectorApi<{ cloudReady?: boolean; supabase?: boolean }>('/health').then(
+      (h) => setCloudReady(h ? !!(h.cloudReady ?? h.supabase) : null)
+    );
+  }, []);
 
   async function refreshConnectorWin() {
     try {
