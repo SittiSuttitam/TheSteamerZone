@@ -60,10 +60,7 @@ export default function App() {
       <Route path="/w/:roomId/activity" element={<ActivityWidget />} />
       <Route path="/w/:roomId/chat" element={<ChatWidget />} />
       <Route path="/w/:roomId/sound" element={<SoundWidget />} />
-      <Route
-        path="/w/:roomId/leaderboard"
-        element={<PlaceholderWidget title="Gift leaderboard" />}
-      />
+      <Route path="/w/:roomId/leaderboard" element={<TopDonateWidget />} />
     </Routes>
   );
 }
