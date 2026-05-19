@@ -2,8 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import {
   canReachLocalConnector,
   connectorApi,
-  isRemoteHttpsDashboard,
 } from '../lib/connector';
+import { useCloudConnectorLink } from '../hooks/useCloudConnectorLink';
 
 type SetupPayload = {
   webLinked?: boolean;
@@ -22,25 +22,29 @@ type HealthPayload = {
 };
 
 export function LinkStatusBar({
+  roomId = '',
   refreshKey = 0,
   onStatus,
 }: {
+  roomId?: string;
   refreshKey?: number;
   onStatus?: (s: { programOn: boolean; webLinked: boolean }) => void;
 }) {
+  const cloud = useCloudConnectorLink(roomId);
+  const useLocal = canReachLocalConnector();
   const [programOn, setProgramOn] = useState(false);
-  const [backendOn, setBackendOn] = useState(false);
+  const [webLinked, setWebLinked] = useState(false);
   const [setup, setSetup] = useState<SetupPayload | null>(null);
   const onStatusRef = useRef(onStatus);
   onStatusRef.current = onStatus;
-  const remoteHttps = isRemoteHttpsDashboard();
 
   useEffect(() => {
-    if (!canReachLocalConnector()) {
-      setBackendOn(false);
-      setProgramOn(false);
+    if (!useLocal) {
+      const linked = cloud.linked;
+      setProgramOn(linked);
+      setWebLinked(linked);
       setSetup(null);
-      onStatusRef.current?.({ programOn: false, webLinked: false });
+      onStatusRef.current?.({ programOn: linked, webLinked: linked });
       return;
     }
     let cancelled = false;
@@ -48,16 +52,16 @@ export function LinkStatusBar({
       const h = await connectorApi<HealthPayload>('/health');
       if (cancelled) return;
       if (!h) {
-        setBackendOn(false);
         setProgramOn(false);
+        setWebLinked(false);
         setSetup(null);
         onStatusRef.current?.({ programOn: false, webLinked: false });
         return;
       }
       const desktop = !!h.desktopAppOpen;
       const linked = !!h.setup?.webLinked;
-      setBackendOn(!!h.ok);
       setProgramOn(desktop);
+      setWebLinked(linked);
       setSetup(h.setup ?? null);
       onStatusRef.current?.({ programOn: desktop, webLinked: linked });
     };
@@ -67,18 +71,18 @@ export function LinkStatusBar({
       cancelled = true;
       window.clearInterval(id);
     };
-  }, [refreshKey]);
+  }, [refreshKey, useLocal, cloud.linked]);
 
-  const webLinked = !!setup?.webLinked;
-  const wasConfigured = !!setup?.roomConfigured;
   const tiktok = !!setup?.tiktokConnected;
+  const displayLinked = useLocal ? webLinked : cloud.linked;
+  const displayProgram = useLocal ? programOn : cloud.linked;
 
   return (
     <section
       className={`rounded-xl border p-4 shadow-card ${
-        webLinked
+        displayLinked
           ? 'border-green-300 bg-green-50/80'
-          : programOn
+          : displayProgram
             ? 'border-amber-300 bg-amber-50/60'
             : 'border-tsz-border bg-tsz-surface'
       }`}
@@ -87,64 +91,46 @@ export function LinkStatusBar({
       <div className="mb-3 flex flex-wrap items-center justify-center gap-2 text-sm font-medium">
         <span
           className={`rounded-full px-3 py-1 ${
-            programOn ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+            displayProgram ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
           }`}
         >
-          โปรแกรม {programOn ? '● เปิดอยู่' : '○ ปิด'}
+          โปรแกรม {displayProgram ? '● เชื่อมแล้ว' : '○ รอกรอกรหัส'}
         </span>
         <span className="text-tsz-muted" aria-hidden>
           ⟷
         </span>
         <span
           className={`rounded-full px-3 py-1 ${
-            webLinked ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-900'
+            displayLinked ? 'bg-green-100 text-green-800' : 'bg-amber-100 text-amber-900'
           }`}
         >
-          เว็บ {webLinked ? '● เชื่อมแล้ว' : '○ ยังไม่เชื่อม'}
+          ห้อง {displayLinked ? '● ตรงกัน' : '○ ยังไม่เชื่อม'}
         </span>
-        {tiktok && programOn && (
-          <>
-            <span className="text-tsz-muted">·</span>
-            <span className="rounded-full bg-sky-100 px-3 py-1 text-sky-900">
-              TikTok ● ไลฟ์
-            </span>
-          </>
-        )}
       </div>
-      {webLinked && setup?.roomCode && (
-        <p className="text-center text-xs text-tsz-muted">
-          รหัสห้อง{' '}
-          <strong className="font-mono text-base text-tsz-text">{setup.roomCode}</strong>
+
+      {!useLocal && !displayLinked && (
+        <p className="text-center text-xs text-amber-900">
+          เปิด Connector แล้วกรอก<strong> รหัสห้อง </strong>และ<strong> รหัสเชื่อม </strong>
+          จากด้านล่าง
         </p>
       )}
-      {remoteHttps && !canReachLocalConnector() && (
-        <p className="mt-2 text-center text-xs text-amber-900">
-          เปิดโปรแกรม Connector บนเครื่อง แล้วกด「เชื่อมต่อทั้งหมด」 — Chrome อาจถามอนุญาต
-          เครือข่ายภายใน (Local network) ครั้งแรก
+      {displayLinked && setup?.roomCode && (
+        <p className="mt-2 text-center text-xs text-tsz-muted">
+          รหัสห้อง <strong className="font-mono">{setup.roomCode}</strong>
         </p>
       )}
-      {!programOn && !(remoteHttps && !canReachLocalConnector()) && (
-        <p className="mt-2 text-center text-xs text-amber-900">
-          {backendOn && wasConfigured
-            ? 'ปิดโปรแกรมแล้ว — เปิด TheSteamerZone Connector แล้วกดเชื่อมต่ออีกครั้ง'
-            : 'เปิดโปรแกรม TheSteamerZone Connector บนเครื่องก่อน'}
-        </p>
-      )}
-      {programOn && !webLinked && (
-        <p className="mt-2 text-center text-xs text-amber-900">
-          กดปุ่ม「เชื่อมต่อทั้งหมด」ด้านล่าง
-        </p>
-      )}
-      {programOn && webLinked && setup?.cloudSync === false && (
-        <p className="mt-2 text-center text-xs text-red-800">
-          {setup.cloudSyncError ||
-            'ซิงก์ OBS ยังไม่ได้ — ล็อกอินใหม่แล้วกด「เชื่อมต่อทั้งหมด」อีกครั้ง'}
-        </p>
-      )}
-      {setup?.ready && programOn && (
+      {displayLinked && !useLocal && (
         <p className="mt-2 text-center text-sm font-medium text-green-700">
-          พร้อมไลฟ์ — เว็บกับโปรแกรมทำงานร่วมกันแล้ว
+          เชื่อมผ่านรหัสห้องแล้ว ✓
         </p>
+      )}
+      {useLocal && programOn && !webLinked && (
+        <p className="mt-2 text-center text-xs text-amber-900">
+          กรอกรหัสในโปรแกรม หรือใช้「เชื่อมต่อทั้งหมด」แบบ localhost
+        </p>
+      )}
+      {tiktok && displayProgram && (
+        <p className="mt-1 text-center text-xs text-sky-800">TikTok ● ไลฟ์</p>
       )}
     </section>
   );

@@ -34,15 +34,24 @@
     </section>
 
     <section class="card">
-      <h2 class="card-title">ทำบนเว็บ</h2>
+      <h2 class="card-title">เชื่อมห้อง</h2>
       <p class="hint">
-        ล็อกอินและกด「เชื่อมต่อทั้งหมด」ที่ thesteamerzone.vercel.app — โปรแกรมนี้รอรับการเชื่อมอัตโนมัติ
+        ล็อกอินเว็บ → คัดลอก <strong>รหัสห้อง</strong> และ <strong>รหัสเชื่อม</strong> → กรอกด้านล่าง
       </p>
-      <p class="hint" style="margin-top: 8px">
-        <strong>TikTok Live</strong> ตั้งบนเว็บตอนเริ่มไลฟ์ (รับของขวัญ/แชท) — ไม่ต้องใส่ในโปรแกรมนี้
-      </p>
-      <button type="button" id="btnWebSetup" class="btn primary" style="margin-top: 12px; width: 100%">
-        เปิดหน้าเว็บ — เชื่อมต่อทั้งหมด
+      <label class="field">
+        <span>รหัสห้อง</span>
+        <input id="inputRoomCode" type="text" placeholder="เช่น A1B2-C3D4" autocomplete="off" />
+      </label>
+      <label class="field">
+        <span>รหัสเชื่อม</span>
+        <input id="inputPairSecret" type="text" placeholder="8 ตัวจากเว็บ" autocomplete="off" />
+      </label>
+      <button type="button" id="btnPair" class="btn primary" style="margin-top: 12px; width: 100%">
+        เชื่อมห้อง
+      </button>
+      <p id="pairMsg" class="pair-msg" hidden></p>
+      <button type="button" id="btnWebSetup" class="btn subtle" style="margin-top: 10px; width: 100%">
+        เปิดหน้าเว็บ (คัดลอกรหัส)
       </button>
     </section>
 

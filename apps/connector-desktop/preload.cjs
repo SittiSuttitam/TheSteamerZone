@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('tsz', {
   openPath: (p) => ipcRenderer.invoke('open-path', p),
   getLogs: () => ipcRenderer.invoke('get-logs'),
   restartConnector: () => ipcRenderer.invoke('restart-connector'),
+  pairRoom: (roomCode, pairingSecret) =>
+    ipcRenderer.invoke('pair-room', { roomCode, pairingSecret }),
   onLog: (cb) => {
     ipcRenderer.on('log', (_e, line) => cb(line));
   },

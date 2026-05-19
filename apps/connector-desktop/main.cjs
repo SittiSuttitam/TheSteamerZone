@@ -232,6 +232,17 @@ ipcMain.handle('open-path', (_e, p) => {
 
 ipcMain.handle('get-logs', () => logBuffer.join(''));
 
+ipcMain.handle('pair-room', async (_e, { roomCode, pairingSecret }) => {
+  const res = await fetch(`http://127.0.0.1:${PORT}/api/setup/pair`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ roomCode, pairingSecret }),
+  });
+  const j = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(j.error || `เชื่อมไม่สำเร็จ (${res.status})`);
+  return j;
+});
+
 ipcMain.handle('restart-connector', async () => {
   stopConnector();
   await new Promise((r) => setTimeout(r, 800));

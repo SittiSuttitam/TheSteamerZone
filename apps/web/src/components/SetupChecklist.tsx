@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { useCloudConnectorLink } from '../hooks/useCloudConnectorLink';
 import { canReachLocalConnector, connectorApi } from '../lib/connector';
 
 type SetupStep = { id: string; label: string; ok: boolean; hint: string };
@@ -9,8 +10,16 @@ type SetupPayload = {
   webLinked?: boolean;
 };
 
-export function SetupChecklist({ refreshKey = 0 }: { refreshKey?: number }) {
+export function SetupChecklist({
+  roomId = '',
+  refreshKey = 0,
+}: {
+  roomId?: string;
+  refreshKey?: number;
+}) {
   const { user, supabaseConfigured } = useAuth();
+  const cloud = useCloudConnectorLink(roomId);
+  const useLocal = canReachLocalConnector();
   const [setup, setSetup] = useState<SetupPayload | null>(null);
   const [connectorOk, setConnectorOk] = useState(false);
 
@@ -48,8 +57,10 @@ export function SetupChecklist({ refreshKey = 0 }: { refreshKey?: number }) {
         {
           id: 'program',
           label: 'เปิดโปรแกรม Connector',
-          ok: connectorOk,
-          hint: connectorOk ? '' : 'ดับเบิลคลิก TheSteamerZone Connector',
+          ok: useLocal ? connectorOk : cloud.linked,
+          hint: (useLocal ? connectorOk : cloud.linked)
+            ? ''
+            : 'เปิดโปรแกรมแล้วกรอกรหัสจากเว็บ',
         },
         {
           id: 'login',
@@ -60,8 +71,8 @@ export function SetupChecklist({ refreshKey = 0 }: { refreshKey?: number }) {
         {
           id: 'weblink',
           label: 'เว็บ ↔ โปรแกรม',
-          ok: !!setup?.webLinked,
-          hint: 'กด「เชื่อมต่อทั้งหมด」',
+          ok: useLocal ? !!setup?.webLinked : cloud.linked,
+          hint: useLocal ? 'กรอกรหัสในโปรแกรม หรือ localhost' : 'กรอกรหัสห้อง + รหัสเชื่อมในโปรแกรม',
         },
         {
           id: 'tiktok',

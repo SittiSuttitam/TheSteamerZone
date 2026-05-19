@@ -1,6 +1,7 @@
 export * from './ttsVoices.js';
 export * from './ttsEngines.js';
 export * from './giftConfig.js';
+export * from './roomCode.js';
 
 /** Gift combo key: user_giftId */
 export const comboKey = (username: string, giftId: string) =>

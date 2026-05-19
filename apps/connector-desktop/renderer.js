@@ -57,7 +57,7 @@ function setLinkBanner(setup, healthOk) {
       roomCode.style.display = 'none';
     }
   } else {
-    linkMessage.textContent = 'รอเว็บกด「เชื่อมต่อทั้งหมด」';
+    linkMessage.textContent = 'กรอกรหัสห้อง + รหัสเชื่อมจากเว็บ';
     roomCode.style.display = 'none';
   }
 
@@ -109,8 +109,28 @@ async function init() {
     statusText.textContent = 'หยุดชั่วคราว';
   });
 
+  const pairMsg = $('pairMsg');
+  $('btnPair').onclick = async () => {
+    const roomCode = $('inputRoomCode').value.trim();
+    const pairingSecret = $('inputPairSecret').value.trim();
+    pairMsg.hidden = true;
+    try {
+      $('btnPair').disabled = true;
+      await window.tsz.pairRoom(roomCode, pairingSecret);
+      pairMsg.textContent = 'เชื่อมห้องแล้ว ✓';
+      pairMsg.className = 'pair-msg ok';
+      pairMsg.hidden = false;
+      await refresh();
+    } catch (e) {
+      pairMsg.textContent = e.message || 'เชื่อมไม่สำเร็จ';
+      pairMsg.className = 'pair-msg err';
+      pairMsg.hidden = false;
+    } finally {
+      $('btnPair').disabled = false;
+    }
+  };
   $('btnWebSetup').onclick = () =>
-    window.tsz.openExternal(`${paths.dashboardUrl}/app/connection`);
+    window.tsz.openExternal(`${paths.connectionUrl || `${paths.dashboardUrl}/app/connection`}`);
   $('btnWidgets').onclick = () =>
     window.tsz.openExternal(`${paths.dashboardUrl}/app/widgets`);
   $('btnData').onclick = () => void window.tsz.openPath(paths.dataDir);

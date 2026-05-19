@@ -46,8 +46,4 @@ export function saveUserConfig(dataDir: string, patch: UserConfigFile): UserConf
   return next;
 }
 
-export function formatRoomCode(roomId: string): string {
-  const id = roomId.replace(/-/g, '').toUpperCase();
-  if (id.length < 8) return roomId;
-  return `${id.slice(0, 4)}-${id.slice(4, 8)}`;
-}
+export { formatRoomCode } from '@thesteamerzone/shared';

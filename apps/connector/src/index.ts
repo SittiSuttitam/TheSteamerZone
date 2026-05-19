@@ -50,6 +50,7 @@ import {
   saveUserConfig,
   type UserConfigFile,
 } from './userConfig.js';
+import { resolveRoomForPairing, touchConnectorLinked } from './roomPairing.js';
 import { isDesktopAppOpen } from './desktopApp.js';
 import {
   defaultViewerConfig,
@@ -366,7 +367,7 @@ function buildSetupStatus() {
           : ''
         : !desktopOpen && roomConfigured
           ? 'เปิดโปรแกรม Connector บนเครื่อง'
-          : 'บนเว็บกด「เชื่อมต่อทั้งหมด」',
+          : 'กรอกรหัสห้อง + รหัสเชื่อมในโปรแกรม',
     },
     {
       id: 'cloud',
@@ -585,7 +586,51 @@ app.put('/api/setup', async (req, res) => {
   });
 });
 
-/** เชื่อมต่อครั้งเดียว: รับห้องจากเว็บ + TikTok (ถ้ามี) */
+/** เชื่อมห้องด้วยรหัสจากเว็บ (ไม่ต้องให้เบราว์เซอร์เรียก localhost) */
+app.post('/api/setup/pair', async (req, res) => {
+  const body = req.body || {};
+  const roomCode = String(body.roomCode || body.code || '').trim();
+  const pairingSecret = String(
+    body.pairingSecret || body.secret || body.widgetSecret || ''
+  ).trim();
+  if (!roomCode || !pairingSecret) {
+    res.status(400).json({ error: 'ใส่รหัสห้องและรหัสเชื่อมจากเว็บ' });
+    return;
+  }
+  if (!supabaseDb) {
+    res.status(503).json({
+      error: 'โปรแกรมยังไม่มี Supabase — build ใหม่พร้อม SUPABASE_URL + SERVICE_ROLE',
+    });
+    return;
+  }
+  try {
+    const room = await resolveRoomForPairing(supabaseDb, roomCode, pairingSecret);
+    if (!room) {
+      res.status(404).json({ error: 'รหัสห้องหรือรหัสเชื่อมไม่ถูกต้อง' });
+      return;
+    }
+    userConfig = saveUserConfig(BASE_DATA, {
+      roomId: room.id,
+      dashboardUrl:
+        body.dashboardUrl != null
+          ? String(body.dashboardUrl)
+          : userConfig.dashboardUrl || WEB_PUBLIC_URL,
+      setupCompleted: true,
+      linkedAt: new Date().toISOString(),
+    });
+    await touchConnectorLinked(supabaseDb, room.id);
+    const cloudSynced = await refreshSupabase();
+    await reloadGiftConfigForRoom();
+    await loadLiveExtrasFromCloud();
+    const setup = buildSetupStatus();
+    res.json({ ok: true, cloudSynced, ...setup, roomId: room.id });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    res.status(500).json({ error: msg });
+  }
+});
+
+/** เชื่อมต่อครั้งเดียว: รับห้องจากเว็บ + TikTok (ถ้ามี) — ใช้เมื่อเว็บเรียก localhost ได้ */
 app.post('/api/setup/quick', async (req, res) => {
   const body = req.body || {};
   const roomId = String(body.roomId || '').trim();
@@ -617,6 +662,13 @@ app.post('/api/setup/quick', async (req, res) => {
   if (ownerErr) {
     res.status(403).json({ error: ownerErr, cloudSynced });
     return;
+  }
+  if (supabaseDb) {
+    try {
+      await touchConnectorLinked(supabaseDb, roomId);
+    } catch {
+      /* column อาจยังไม่มีจนกว่าจะรัน migration */
+    }
   }
   await reloadGiftConfigForRoom();
   await loadLiveExtrasFromCloud();
@@ -1222,11 +1274,17 @@ const server = app.listen(PORT, () => {
   console.log(`[TheSteamerZone] data: ${activeDataDir()}`);
   if (!userConfig.roomId?.trim() && !ROOM_ID) {
     console.warn(
-      '[TheSteamerZone] ยังไม่มีรหัสห้อง — ล็อกอินเว็บแล้วกด「ส่งไปโปรแกรม」'
+      '[TheSteamerZone] ยังไม่มีรหัสห้อง — ดูรหัสบนเว็บแล้วกรอกในโปรแกรม'
     );
   }
   if (!rt) console.warn('[TheSteamerZone] ซิงก์คลาวด์ปิดอยู่ (ผู้ดูแลตั้งค่าเซิร์ฟเวอร์ครั้งเดียว)');
 });
+
+setInterval(() => {
+  const roomId = userConfig.roomId?.trim();
+  if (!roomId || !supabaseDb || !userConfig.setupCompleted) return;
+  void touchConnectorLinked(supabaseDb, roomId).catch(() => {});
+}, 30_000);
 
 server.on('error', (err: NodeJS.ErrnoException) => {
   if (err.code === 'EADDRINUSE') {
