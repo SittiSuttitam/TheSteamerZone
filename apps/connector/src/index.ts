@@ -13,12 +13,14 @@ import {
   hasServerBuildConfig,
   usesServiceRole,
 } from './supabaseClient.js';
+import { getDataDir, type GiftConfigFile } from './config.js';
+import { resolveAccountDataDir, userIdFromAccessToken } from './accountData.js';
 import {
-  getDataDir,
-  loadGiftConfig,
-  saveGiftConfig,
-  type GiftConfigFile,
-} from './config.js';
+  loadGiftConfigForRoom,
+  saveGiftConfigForRoom,
+} from './giftConfigStore.js';
+import { bumpLeaderboard, parseTopDonors, parseTopLikers } from './leaderboard.js';
+import { defaultGiftConfig, type LeaderboardEntry } from '@thesteamerzone/shared';
 import {
   createGiftComboTracker,
   processGiftMapping,
@@ -70,7 +72,7 @@ const WEB_PUBLIC_URL = resolveWebPublicUrl();
 const PUBLIC_URL =
   process.env.CONNECTOR_PUBLIC_URL || `http://127.0.0.1:${PORT}`;
 const ROOM_ID = process.env.DEFAULT_ROOM_ID || '';
-const USER_DATA = getDataDir(process.env.USER_DATA_DIR);
+const BASE_DATA = getDataDir(process.env.USER_DATA_DIR);
 const SUPABASE_URL = process.env.SUPABASE_URL || '';
 
 interface LocalState {
@@ -89,7 +91,67 @@ let state: LocalState = {
   winMax: null,
 };
 
-let giftConfig: GiftConfigFile = loadGiftConfig(USER_DATA);
+let topDonors: LeaderboardEntry[] = [];
+let topLikers: LeaderboardEntry[] = [];
+let totalLikes = 0;
+let likeGoal: number | null = null;
+
+let userConfig: UserConfigFile = loadUserConfig(BASE_DATA);
+
+function activeDataDir(): string {
+  return resolveAccountDataDir(BASE_DATA, userConfig.linkedUserId);
+}
+
+let giftConfig: GiftConfigFile = defaultGiftConfig() as GiftConfigFile;
+
+async function reloadGiftConfigForRoom(): Promise<void> {
+  const room = effectiveRoomId();
+  giftConfig = await loadGiftConfigForRoom(supabaseDb, activeDataDir(), room);
+}
+
+async function assertRoomBelongsToLinkedUser(roomId: string): Promise<string | null> {
+  if (!supabaseDb) return null;
+  const { data: auth } = await supabaseDb.auth.getUser();
+  const uid = auth.user?.id;
+  if (!uid) return 'ล็อกอินเว็บแล้วกดเชื่อมต่อทั้งหมด';
+  const { data: room, error } = await supabaseDb
+    .from('rooms')
+    .select('owner_id')
+    .eq('id', roomId)
+    .maybeSingle();
+  if (error) return error.message;
+  if (!room) return 'ไม่พบห้องนี้';
+  if (room.owner_id !== uid) return 'ห้องนี้ไม่ใช่ของบัญชีที่เชื่อมอยู่';
+  return null;
+}
+
+async function loadLiveExtrasFromCloud(): Promise<void> {
+  if (!supabaseDb) return;
+  const room = effectiveRoomId();
+  const { data } = await supabaseDb
+    .from('live_state')
+    .select('top_donors, top_likers, total_likes, like_goal, win, win_label, win_goal, win_min, win_max')
+    .eq('room_id', room)
+    .maybeSingle();
+  if (!data) return;
+  topDonors = parseTopDonors(data.top_donors);
+  topLikers = parseTopLikers(data.top_likers);
+  totalLikes = Number(data.total_likes ?? 0);
+  likeGoal =
+    data.like_goal === null || data.like_goal === undefined
+      ? null
+      : Number(data.like_goal);
+  state.win = Number(data.win ?? state.win);
+  state.winLabel = String(data.win_label ?? state.winLabel);
+  state.winGoal =
+    data.win_goal === null || data.win_goal === undefined
+      ? null
+      : Number(data.win_goal);
+  state.winMin =
+    data.win_min === null || data.win_min === undefined ? null : Number(data.win_min);
+  state.winMax =
+    data.win_max === null || data.win_max === undefined ? null : Number(data.win_max);
+}
 let giftConnection: WebcastPushConnection | null = null;
 let connectedRoom = '';
 
@@ -114,7 +176,7 @@ function applySupabaseClient(client: SupabaseClient | null) {
 
 async function refreshSupabase(): Promise<boolean> {
   const client = await createConnectorSupabase(userConfig, (tokens) => {
-    userConfig = saveUserConfig(USER_DATA, tokens);
+    userConfig = saveUserConfig(BASE_DATA, tokens);
   });
   if (client) {
     const { data } = await client.auth.getSession();
@@ -124,9 +186,11 @@ async function refreshSupabase(): Promise<boolean> {
       return false;
     }
     if (data.session.access_token !== userConfig.accessToken) {
-      userConfig = saveUserConfig(USER_DATA, {
+      const uid = userIdFromAccessToken(data.session.access_token);
+      userConfig = saveUserConfig(BASE_DATA, {
         accessToken: data.session.access_token,
         refreshToken: data.session.refresh_token ?? userConfig.refreshToken,
+        linkedUserId: uid ?? userConfig.linkedUserId,
       });
     }
   }
@@ -155,21 +219,26 @@ function resolveGoogleApiKey(): string {
   return (ttsSettings.google_api_key || '').trim();
 }
 
-const tts = createTtsService(USER_DATA, resolveGoogleApiKey);
-ttsSettings = tts.loadSettingsFile(USER_DATA);
+const tts = createTtsService(activeDataDir(), resolveGoogleApiKey);
+ttsSettings = tts.loadSettingsFile(activeDataDir());
 
-let imageOverlayConfig = loadImageOverlayConfig(USER_DATA);
-let userConfig: UserConfigFile = loadUserConfig(USER_DATA);
+let imageOverlayConfig = loadImageOverlayConfig(activeDataDir());
 {
   const dash = normalizeDashboardUrl(userConfig.dashboardUrl, WEB_PUBLIC_URL);
   if (dash && dash !== userConfig.dashboardUrl) {
-    userConfig = saveUserConfig(USER_DATA, { dashboardUrl: dash });
+    userConfig = saveUserConfig(BASE_DATA, { dashboardUrl: dash });
+  }
+  const uid =
+    userConfig.linkedUserId ?? userIdFromAccessToken(userConfig.accessToken);
+  if (uid && uid !== userConfig.linkedUserId) {
+    userConfig = saveUserConfig(BASE_DATA, { linkedUserId: uid });
   }
 }
-let viewerConfig: ViewerConfigFile = loadViewerConfig(USER_DATA);
-let soundConfig: SoundConfigFile = loadSoundConfig(USER_DATA);
+let viewerConfig: ViewerConfigFile = loadViewerConfig(activeDataDir());
+let soundConfig: SoundConfigFile = loadSoundConfig(activeDataDir());
 const activeVips = new Map<string, { lastActivity: number; soundPlayed: boolean }>();
-void refreshSupabase();
+void refreshSupabase().then(() => reloadGiftConfigForRoom());
+void loadLiveExtrasFromCloud();
 setInterval(() => {
   if (userConfig.accessToken?.trim() || userConfig.refreshToken?.trim()) {
     void refreshSupabase();
@@ -230,15 +299,20 @@ async function pushState() {
     await refreshSupabase();
   }
   const room = effectiveRoomId();
+  const fullState = {
+    win: state.win,
+    winLabel: state.winLabel,
+    winGoal: state.winGoal,
+    winMin: state.winMin,
+    winMax: state.winMax,
+    topDonors,
+    topLikers,
+    totalLikes,
+    likeGoal,
+  };
   const payload = {
     type: 'state' as const,
-    state: {
-      win: state.win,
-      winLabel: state.winLabel,
-      winGoal: state.winGoal,
-      winMin: state.winMin,
-      winMax: state.winMax,
-    },
+    state: fullState,
   };
   if (!rt) return;
   await rt.broadcast(room, 'state', payload as unknown as Record<string, unknown>);
@@ -248,6 +322,10 @@ async function pushState() {
     win_goal: state.winGoal,
     win_min: state.winMin,
     win_max: state.winMax,
+    top_donors: topDonors,
+    top_likers: topLikers,
+    total_likes: totalLikes,
+    like_goal: likeGoal,
   });
 }
 
@@ -259,7 +337,7 @@ function effectiveRoomId(): string {
 }
 
 function buildSetupStatus() {
-  const desktopOpen = isDesktopAppOpen(USER_DATA);
+  const desktopOpen = isDesktopAppOpen(BASE_DATA);
   const roomId = effectiveRoomId();
   const hasUserRoom = !!(userConfig.roomId?.trim() || ROOM_ID);
   const roomOk =
@@ -412,8 +490,8 @@ function checkAndNotifyVip(data: Record<string, unknown>, eventType: string) {
 const app = express();
 app.use(cors({ origin: true }));
 app.use(express.json({ limit: '4mb' }));
-app.use('/images', express.static(imagesDir(USER_DATA)));
-app.use('/sounds', express.static(soundsDir(USER_DATA)));
+app.use('/images', express.static(imagesDir(activeDataDir())));
+app.use('/sounds', express.static(soundsDir(activeDataDir())));
 
 app.get('/api/actions', async (req, res) => {
   if (!supabaseDb) {
@@ -449,7 +527,7 @@ app.get('/health', (_req, res) => {
     cloudReady: !!rt,
     cloudSyncError: getLastAuthError(),
     ttsGoogle: !!resolveGoogleApiKey(),
-    dataDir: USER_DATA,
+    dataDir: activeDataDir(),
     setup,
   });
 });
@@ -465,7 +543,7 @@ app.put('/api/setup', async (req, res) => {
   const body = req.body || {};
   const nextRoom =
     body.roomId != null ? String(body.roomId).trim() : userConfig.roomId;
-  userConfig = saveUserConfig(USER_DATA, {
+  userConfig = saveUserConfig(BASE_DATA, {
     roomId: nextRoom,
     dashboardUrl:
       body.dashboardUrl != null ? String(body.dashboardUrl) : userConfig.dashboardUrl,
@@ -492,7 +570,14 @@ app.post('/api/setup/quick', async (req, res) => {
     res.status(400).json({ error: 'ต้องมีรหัสห้องจากบัญชีเว็บ' });
     return;
   }
-  userConfig = saveUserConfig(USER_DATA, {
+  const accessToken =
+    body.accessToken != null ? String(body.accessToken) : userConfig.accessToken;
+  const refreshToken =
+    body.refreshToken != null ? String(body.refreshToken) : userConfig.refreshToken;
+  const linkedUserId =
+    userIdFromAccessToken(accessToken) ?? userConfig.linkedUserId;
+
+  userConfig = saveUserConfig(BASE_DATA, {
     roomId,
     dashboardUrl:
       body.dashboardUrl != null
@@ -500,12 +585,18 @@ app.post('/api/setup/quick', async (req, res) => {
         : userConfig.dashboardUrl,
     setupCompleted: true,
     linkedAt: new Date().toISOString(),
-    accessToken:
-      body.accessToken != null ? String(body.accessToken) : userConfig.accessToken,
-    refreshToken:
-      body.refreshToken != null ? String(body.refreshToken) : userConfig.refreshToken,
+    accessToken,
+    refreshToken,
+    linkedUserId,
   });
   const cloudSynced = await refreshSupabase();
+  const ownerErr = await assertRoomBelongsToLinkedUser(roomId);
+  if (ownerErr) {
+    res.status(403).json({ error: ownerErr, cloudSynced });
+    return;
+  }
+  await reloadGiftConfigForRoom();
+  await loadLiveExtrasFromCloud();
   const username = String(body.tiktokUsername || body.username || '')
     .replace(/^@/, '')
     .trim();
@@ -599,7 +690,7 @@ app.post('/api/win/reset', (_req, res) => {
 });
 
 app.get('/api/image-overlay/config', (req, res) => {
-  imageOverlayConfig = loadImageOverlayConfig(USER_DATA);
+  imageOverlayConfig = loadImageOverlayConfig(activeDataDir());
   const webBase = String(req.query.webBase || WEB_PUBLIC_URL);
   res.json({
     config: imageOverlayConfig,
@@ -626,7 +717,7 @@ app.post('/api/image-overlay/upload', (req, res) => {
       res.status(400).json({ error: 'file too large (max 8MB)' });
       return;
     }
-    imageOverlayConfig = uploadImage(USER_DATA, imageOverlayConfig, type, filename, buffer);
+    imageOverlayConfig = uploadImage(activeDataDir(), imageOverlayConfig, type, filename, buffer);
     const webBase = String(req.query.webBase || req.body?.webBase || WEB_PUBLIC_URL);
     res.json({
       ok: true,
@@ -643,7 +734,7 @@ app.post('/api/image-overlay/reset', (req, res) => {
     res.status(400).json({ error: 'invalid type' });
     return;
   }
-  imageOverlayConfig = clearImageSlot(USER_DATA, imageOverlayConfig, type);
+  imageOverlayConfig = clearImageSlot(activeDataDir(), imageOverlayConfig, type);
   const webBase = String(req.query.webBase || req.body?.webBase || WEB_PUBLIC_URL);
   res.json({
     ok: true,
@@ -651,15 +742,30 @@ app.post('/api/image-overlay/reset', (req, res) => {
   });
 });
 
-app.get('/api/config/gift', (_req, res) => {
-  giftConfig = loadGiftConfig(USER_DATA);
-  res.json(giftConfig);
+app.get('/api/config/gift', async (_req, res) => {
+  try {
+    const room = effectiveRoomId();
+    giftConfig = await loadGiftConfigForRoom(supabaseDb, activeDataDir(), room);
+    res.json(giftConfig);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
 });
 
-app.put('/api/config/gift', (req, res) => {
-  giftConfig = { ...giftConfig, ...req.body };
-  saveGiftConfig(USER_DATA, giftConfig);
-  res.json(giftConfig);
+app.put('/api/config/gift', async (req, res) => {
+  const room = effectiveRoomId();
+  const ownerErr = await assertRoomBelongsToLinkedUser(room);
+  if (ownerErr) {
+    res.status(403).json({ error: ownerErr });
+    return;
+  }
+  try {
+    giftConfig = { ...giftConfig, ...req.body };
+    await saveGiftConfigForRoom(supabaseDb, activeDataDir(), room, giftConfig);
+    res.json(giftConfig);
+  } catch (e) {
+    res.status(500).json({ error: String(e) });
+  }
 });
 
 function handleGiftPayload(ev: Record<string, unknown>) {
@@ -687,6 +793,12 @@ function handleGiftPayload(ev: Record<string, unknown>) {
       finalRepeat,
       applyWinDelta
     );
+    const userId = String(ev.uniqueId ?? ev.userId ?? 'guest');
+    const nickname = String(ev.nickname ?? ev.displayName ?? userId);
+    const coins = Number(ev.diamondCount ?? ev.coins ?? 1);
+    const add = (Number.isFinite(coins) ? coins : 1) * finalRepeat;
+    topDonors = bumpLeaderboard(topDonors, userId, nickname, add);
+    void pushState();
     void rt?.broadcast(effectiveRoomId(), 'activity', {
       type: 'gift',
       giftId,
@@ -714,7 +826,20 @@ function handleGiftPayload(ev: Record<string, unknown>) {
 app.post('/api/mock/gift', (req, res) => {
   const ev = { ...req.body, mock: true, repeatEnd: true, repeatCount: req.body?.repeatCount ?? 1 };
   handleGiftPayload(ev);
-  res.json({ ok: true, win: state.win });
+  res.json({ ok: true, win: state.win, topDonors });
+});
+
+app.post('/api/mock/like', (req, res) => {
+  const add = Math.max(1, Number(req.body?.count ?? req.body?.delta ?? 1));
+  totalLikes += add;
+  if (req.body?.likeGoal != null) {
+    likeGoal = Number(req.body.likeGoal);
+  }
+  const userId = String(req.body?.uniqueId ?? req.body?.username ?? 'liker');
+  const nickname = String(req.body?.nickname ?? userId);
+  topLikers = bumpLeaderboard(topLikers, userId, nickname, add);
+  void pushState();
+  res.json({ ok: true, totalLikes, likeGoal, topLikers });
 });
 
 app.post('/api/mock/chat', (req, res) => {
@@ -735,16 +860,16 @@ app.post('/api/mock/chat', (req, res) => {
 });
 
 app.get('/api/config/viewer', (_req, res) => {
-  viewerConfig = loadViewerConfig(USER_DATA);
+  viewerConfig = loadViewerConfig(activeDataDir());
   res.json({
     ...viewerConfig,
-    sounds: listSoundFiles(USER_DATA),
+    sounds: listSoundFiles(activeDataDir()),
   });
 });
 
 app.put('/api/config/viewer', (req, res) => {
   const body = req.body || {};
-  viewerConfig = saveViewerConfig(USER_DATA, {
+  viewerConfig = saveViewerConfig(activeDataDir(), {
     enabled: body.enabled ?? viewerConfig.enabled,
     volume:
       typeof body.volume === 'number' ? body.volume : viewerConfig.volume,
@@ -755,14 +880,14 @@ app.put('/api/config/viewer', (req, res) => {
       ? body.soundFiles
       : viewerConfig.soundFiles,
   });
-  res.json({ ok: true, ...viewerConfig, sounds: listSoundFiles(USER_DATA) });
+  res.json({ ok: true, ...viewerConfig, sounds: listSoundFiles(activeDataDir()) });
 });
 
 app.get('/api/config/sounds', (_req, res) => {
-  soundConfig = loadSoundConfig(USER_DATA);
-  viewerConfig = loadViewerConfig(USER_DATA);
+  soundConfig = loadSoundConfig(activeDataDir());
+  viewerConfig = loadViewerConfig(activeDataDir());
   res.json({
-    files: listSoundFiles(USER_DATA),
+    files: listSoundFiles(activeDataDir()),
     incrementFile: soundConfig.incrementFile,
     decrementFile: soundConfig.decrementFile,
     volume: viewerConfig.volume,
@@ -772,26 +897,26 @@ app.get('/api/config/sounds', (_req, res) => {
 app.put('/api/config/sounds', (req, res) => {
   const body = req.body || {};
   if (body.incrementFile != null) {
-    soundConfig = saveSoundConfig(USER_DATA, {
+    soundConfig = saveSoundConfig(activeDataDir(), {
       ...soundConfig,
       incrementFile: String(body.incrementFile),
     });
   }
   if (body.decrementFile != null) {
-    soundConfig = saveSoundConfig(USER_DATA, {
+    soundConfig = saveSoundConfig(activeDataDir(), {
       ...soundConfig,
       decrementFile: String(body.decrementFile),
     });
   }
   if (typeof body.volume === 'number') {
-    viewerConfig = saveViewerConfig(USER_DATA, {
+    viewerConfig = saveViewerConfig(activeDataDir(), {
       ...viewerConfig,
       volume: body.volume,
     });
   }
   res.json({
     ok: true,
-    files: listSoundFiles(USER_DATA),
+    files: listSoundFiles(activeDataDir()),
     ...soundConfig,
     volume: viewerConfig.volume,
   });
@@ -799,8 +924,8 @@ app.put('/api/config/sounds', (req, res) => {
 
 app.get('/api/sounds', (_req, res) => {
   res.json({
-    files: listSoundFiles(USER_DATA),
-    ...loadSoundConfig(USER_DATA),
+    files: listSoundFiles(activeDataDir()),
+    ...loadSoundConfig(activeDataDir()),
   });
 });
 
@@ -820,13 +945,13 @@ app.post('/api/sounds/upload', (req, res) => {
       res.status(400).json({ error: 'max 5MB' });
       return;
     }
-    const sd = soundsDir(USER_DATA);
+    const sd = soundsDir(activeDataDir());
     fs.mkdirSync(sd, { recursive: true });
     fs.writeFileSync(path.join(sd, filename), buffer);
-    const files = listSoundFiles(USER_DATA);
+    const files = listSoundFiles(activeDataDir());
     if (!viewerConfig.soundFiles.includes(filename)) {
       viewerConfig.soundFiles = [...viewerConfig.soundFiles, filename];
-      saveViewerConfig(USER_DATA, viewerConfig);
+      saveViewerConfig(activeDataDir(), viewerConfig);
     }
     res.json({ ok: true, filename, files });
   } catch (e) {
@@ -951,7 +1076,7 @@ app.put('/api/tts/settings', (req, res) => {
   } = body;
 
   ttsSettings = { ...ttsSettings, ...(rest as Partial<TtsSettingsShape>) };
-  tts.saveSettingsFile(USER_DATA, ttsSettings);
+  tts.saveSettingsFile(activeDataDir(), ttsSettings);
   res.json(publicTtsSettings());
 });
 
@@ -1071,7 +1196,7 @@ app.post('/api/tiktok/disconnect', async (_req, res) => {
 
 const server = app.listen(PORT, () => {
   console.log(`[TheSteamerZone] connector http://127.0.0.1:${PORT}`);
-  console.log(`[TheSteamerZone] data: ${USER_DATA}`);
+  console.log(`[TheSteamerZone] data: ${activeDataDir()}`);
   if (!userConfig.roomId?.trim() && !ROOM_ID) {
     console.warn(
       '[TheSteamerZone] ยังไม่มีรหัสห้อง — ล็อกอินเว็บแล้วกด「ส่งไปโปรแกรม」'

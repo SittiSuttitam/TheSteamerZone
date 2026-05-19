@@ -11,6 +11,7 @@ import type { Session, User } from '@supabase/supabase-js';
 import { getSupabase } from '../lib/supabase';
 import { oauthRedirectPath } from '../lib/appUrl';
 import { exchangeOAuthCodeIfPresent } from '../lib/oauthExchange';
+import { clearRoomStorage } from '../lib/roomStorage';
 
 type AuthState = {
   user: User | null;
@@ -87,6 +88,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [s]);
 
   const signOut = useCallback(async () => {
+    clearRoomStorage();
     if (!s) return;
     await s.auth.signOut();
   }, [s]);

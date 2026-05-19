@@ -13,6 +13,8 @@ export interface UserConfigFile {
   /** จากเว็บหลังล็อกอิน — ใช้แทน service_role บนเครื่องผู้ใช้ */
   accessToken?: string;
   refreshToken?: string;
+  /** auth.users.id — แยกโฟลเดอร์ gift/sound ต่อบัญชี */
+  linkedUserId?: string;
 }
 
 const FILE = 'user-config.json';

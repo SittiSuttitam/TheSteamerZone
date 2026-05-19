@@ -5,7 +5,7 @@ import { BrandLogo } from '../components/BrandLogo';
 
 const tabs = [
   { to: '/app/connection', label: 'เริ่มใช้งาน' },
-  { to: '/app/voice', label: 'เสียง & TTS (เร็วๆ นี้)' },
+  { to: '/app/voice', label: 'เสียง & TTS' },
   { to: '/app/rules', label: 'กฎของขวัญ' },
   { to: '/app/widgets', label: 'Widgets' },
   { to: '/app/images', label: 'รูปภาพ' },

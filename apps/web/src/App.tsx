@@ -13,7 +13,10 @@ import { ImageWidget } from './widgets/ImageWidget';
 import { WinWidget } from './widgets/WinWidget';
 import { WheelWidget } from './widgets/WheelWidget';
 import { TtsWidget } from './widgets/TtsWidget';
-import { PlaceholderWidget } from './widgets/PlaceholderWidget';
+import { TopDonateWidget } from './widgets/TopDonateWidget';
+import { TopCoinWidget } from './widgets/TopCoinWidget';
+import { TopViewersWidget } from './widgets/TopViewersWidget';
+import { LikesWidget } from './widgets/LikesWidget';
 import { ActivityWidget } from './widgets/ActivityWidget';
 import { ChatWidget } from './widgets/ChatWidget';
 import { SoundWidget } from './widgets/SoundWidget';
@@ -49,10 +52,10 @@ export default function App() {
       <Route path="/w/:roomId/win" element={<WinWidget />} />
       <Route path="/w/:roomId/wheel" element={<WheelWidget />} />
       <Route path="/w/:roomId/tts" element={<TtsWidget />} />
-      <Route path="/w/:roomId/likes" element={<PlaceholderWidget title="Likes" />} />
-      <Route path="/w/:roomId/topcoin" element={<PlaceholderWidget title="Top donors" />} />
-      <Route path="/w/:roomId/topviewers" element={<PlaceholderWidget title="Top viewers" />} />
-      <Route path="/w/:roomId/topdonate" element={<PlaceholderWidget title="Top donate" />} />
+      <Route path="/w/:roomId/likes" element={<LikesWidget />} />
+      <Route path="/w/:roomId/topcoin" element={<TopCoinWidget />} />
+      <Route path="/w/:roomId/topviewers" element={<TopViewersWidget />} />
+      <Route path="/w/:roomId/topdonate" element={<TopDonateWidget />} />
       <Route path="/w/:roomId/image" element={<ImageWidget />} />
       <Route path="/w/:roomId/activity" element={<ActivityWidget />} />
       <Route path="/w/:roomId/chat" element={<ChatWidget />} />

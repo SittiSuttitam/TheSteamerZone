@@ -3,9 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { getSupabase } from '../lib/supabase';
 import { ensureDefaultRoom, fetchMyRooms } from '../lib/rooms';
 import { widgetBaseUrl } from '../lib/appUrl';
-
-const LS_ROOM = 'tsz_room_id';
-const LS_TOKEN = 'tsz_widget_token';
+import { LS_ROOM, LS_TOKEN, clearRoomStorage } from '../lib/roomStorage';
 
 export function useRoomCredentials() {
   const { user, supabaseConfigured } = useAuth();
@@ -19,10 +17,19 @@ export function useRoomCredentials() {
   );
 
   useEffect(() => {
+    if (!user) return;
     const v = roomId.trim();
     if (v) localStorage.setItem(LS_ROOM, v);
     else localStorage.removeItem(LS_ROOM);
-  }, [roomId]);
+  }, [roomId, user?.id]);
+
+  useEffect(() => {
+    if (!user) {
+      setRoomId('');
+      setWidgetToken('');
+      clearRoomStorage();
+    }
+  }, [user?.id]);
 
   useEffect(() => {
     const v = widgetToken.trim();
@@ -84,5 +91,6 @@ export function useRoomCredentials() {
     widgetUrl,
     ready,
     loadRoomFromAccount,
+    clearRoomStorage,
   };
 }

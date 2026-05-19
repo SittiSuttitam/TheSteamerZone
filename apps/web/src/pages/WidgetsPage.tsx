@@ -122,6 +122,17 @@ export function WidgetsPage() {
       </section>
 
       <SoundSettingsPanel />
+      <section className="mb-6 rounded-xl border border-emerald-200/80 bg-emerald-50/60 p-5 text-sm text-tsz-muted shadow-card">
+        <h2 className="mb-2 font-semibold text-tsz-text">วิธีทดสอบง่ายๆ (ไม่ต้องไลฟ์ TikTok)</h2>
+        <ol className="list-decimal space-y-1 pl-5">
+          <li>Login → โหลดห้องจากบัญชี</li>
+          <li>เปิด Connector → หน้าเริ่มใช้งาน → เชื่อมต่อทั้งหมด</li>
+          <li>เปิดตัวอย่างวิดเจ็ต (ปุ่มในตาราง) หรือ Copy URL ไปแท็บใหม่</li>
+          <li>กลับมาที่แผงด้านล่าง → กดทดสอบ WIN / ของขวัญ / ไลค์</li>
+          <li>ดูผลในแท็บวิดเจ็ต — ถ้าไม่ขยับ ตรวจว่าเชื่อมต่อทั้งหมดแล้ว</li>
+        </ol>
+      </section>
+
       <WidgetTestPanel roomReady={room.ready} />
 
       {/* วิธี OBS */}

@@ -19,7 +19,7 @@
     "setup": "node scripts/setup.mjs",
     "setup:check": "node scripts/check-setup.mjs",
     "test": "node scripts/run-local-tests.mjs",
-    "test:unit": "npm run build:shared && npm run build:connector && node --test tests/unit/shared.test.mjs tests/unit/gifts.test.mjs",
+    "test:unit": "npm run build:shared && npm run build:connector && node --test tests/unit/shared.test.mjs tests/unit/gifts.test.mjs tests/unit/giftConfig.test.mjs tests/unit/leaderboard.test.mjs tests/unit/accountData.test.mjs",
     "test:integration": "npm run build:connector && node --test tests/integration/connector-api.test.mjs",
     "lint": "npm run lint -w @thesteamerzone/web --if-present"
   },

@@ -75,6 +75,10 @@ export function createRealtimePublisher(
         win_goal?: number | null;
         win_min?: number | null;
         win_max?: number | null;
+        top_donors?: unknown;
+        top_likers?: unknown;
+        total_likes?: number;
+        like_goal?: number | null;
         meta?: Record<string, unknown>;
       }
     ) {
@@ -87,6 +91,10 @@ export function createRealtimePublisher(
             win_goal: row.win_goal ?? null,
             win_min: row.win_min ?? null,
             win_max: row.win_max ?? null,
+            top_donors: row.top_donors ?? [],
+            top_likers: row.top_likers ?? [],
+            total_likes: row.total_likes ?? 0,
+            like_goal: row.like_goal ?? null,
             meta: row.meta ?? {},
             updated_at: new Date().toISOString(),
           },

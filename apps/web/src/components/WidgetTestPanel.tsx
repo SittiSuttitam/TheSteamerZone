@@ -408,6 +408,55 @@ export function WidgetTestPanel({ roomReady }: Props) {
           >
             ส่งของขวัญกำหนดเอง
           </button>
+          <p className="mt-2 text-[11px] text-tsz-muted">
+            ทดสอบวิดเจ็ต: WIN · อันดับของขวัญ · อันดับเหรียญ
+          </p>
+        </div>
+
+        <div className="rounded-lg border border-tsz-border bg-white/60 p-4">
+          <h3 className="mb-3 text-sm font-semibold">ไลค์จำลอง</h3>
+          <p className="mb-2 text-[11px] text-tsz-muted">
+            ทดสอบวิดเจ็ต: ยอดไลค์ · ผู้ชมสูงสุด
+          </p>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              disabled={busy}
+              className="rounded-lg border border-tsz-border px-3 py-2 text-sm disabled:opacity-50"
+              onClick={() =>
+                void run('ไลค์ +10', () =>
+                  api(`${base}/api/mock/like`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                      count: 10,
+                      nickname: 'ผู้ทดสอบ',
+                      uniqueId: 'mock_liker',
+                      likeGoal: 1000,
+                    }),
+                  })
+                )
+              }
+            >
+              ❤️ +10 ไลค์
+            </button>
+            <button
+              type="button"
+              disabled={busy}
+              className="rounded-lg border border-tsz-border px-3 py-2 text-sm disabled:opacity-50"
+              onClick={() =>
+                void run('ไลค์ +100', () =>
+                  api(`${base}/api/mock/like`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ count: 100, likeGoal: 5000 }),
+                  })
+                )
+              }
+            >
+              ❤️ +100 ไลค์
+            </button>
+          </div>
         </div>
 
         {/* Wheel + Chat */}

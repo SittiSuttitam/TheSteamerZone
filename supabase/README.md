@@ -13,6 +13,7 @@ Or paste both files in SQL Editor (in order):
 - `supabase/migrations/20250219120000_init.sql`
 - `supabase/migrations/20250519120000_bootstrap_user_room.sql` (auto room on signup)
 - `supabase/migrations/20250519130000_user_overlay_images.sql` (รูป overlay ต่อ user + Storage bucket `overlay-images`)
+- `supabase/migrations/20250519140000_room_gift_config.sql` (กฎของขวัญต่อห้อง — RLS เฉพาะเจ้าของ)
 
 3. **Auth → Providers:** enable Google (Client ID / Secret from Google Cloud Console).
 4. **Authentication → URL Configuration** (ถ้าไม่แก้ หลัง login จะไป `localhost:5173` เสมอ):
